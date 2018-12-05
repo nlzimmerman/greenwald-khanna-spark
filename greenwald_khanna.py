@@ -1,10 +1,13 @@
+from random import Random
+from math import floor, ceil, log, cos, pi
+
 # TODO: move this to a library
 def new_gk_dict(epsilon):
     return {
         # every item in sample will be a list of form
         # [v, g, delta]
         # I'm using lists and not tuples because I want to mutate
-        # in-place to increase speed. 
+        # in-place to increase speed.
         "sample": list(),
         "epsilon": epsilon,
         "count": 0,
@@ -17,7 +20,7 @@ def insert_gk(d, v):
     # remember that since count is an int,
     # an operation like count = d['count']
     # would create a "copy", not a reference
-    # 
+    #
     # this never changes
     epsilon = d['epsilon']
     # beware, sample_length is not the same thing as count at all
@@ -83,7 +86,7 @@ def query_gk(d, quantile):
         starting_rank += sample[1]
         ending_rank = starting_rank + sample[2]
         if (
-            ((desired_rank-starting_rank) <= rank_epsilon) and 
+            ((desired_rank-starting_rank) <= rank_epsilon) and
             ((ending_rank-desired_rank) <= rank_epsilon)
         ):
             return sample[0]
@@ -104,21 +107,21 @@ def combine_gk(g0, g1):
     # it also means that you need to not modify the contents without also copying those :)
     sample0 = copy(g0['sample'])
     sample1 = copy(g1['sample'])
-    
+
     out = list()
     while len(sample0) > 0 and len(sample1) > 0:
-        
+
         # take whichever lead item is smallest
         if sample0[0][0] < sample1[0][0]:
             # removes the tuple from sample0
             # the copy is so that changes here don't propagate back to g0
-            # which can happen because sample is a shallow copy! 
+            # which can happen because sample is a shallow copy!
             # which can cause Spark weirdness.
             # g0 and g1 are both disposible here but I seem to recall that things get weird when you
             # mutate things you aren't supposed to mutate
             this_element = copy(sample0.pop(0))
             # None, 0, 0 is the default value here because if there is no larger element, we don't add
-            # anything to delta. 
+            # anything to delta.
             other_next_element = next((x for x in sample1 if x[0] > this_element[0]), (None, 0, 0))
         else:
             this_element = copy(sample1.pop(0))
@@ -139,7 +142,7 @@ def combine_gk(g0, g1):
         out.append(this_element)
     new_epsilon = max(g0['epsilon'], g1['epsilon'])
     count_increase = min(g0['count'],g1['count'])
-    
+
     to_return = new_gk_dict(new_epsilon)
     to_return['sample'] = out
     to_return['count'] = g0['count'] + g1['count']
@@ -150,3 +153,21 @@ def combine_gk(g0, g1):
     else:
         return to_return
 
+
+if __name__ == "__main__":
+    r = Random()
+    r.seed(2210)
+    numbers = list()
+    for _ in range(100000):
+        u = r.random()
+        v = r.random()
+        numbers.append(
+            (-2*log(u))**(0.5)*cos(2*pi*v)
+        )
+    print(numbers[-1])
+    import numpy as np
+    print(np.quantile(numbers, [0.05, 0.5, 0.95]))
+    d = new_gk_dict(0.01)
+    for n in numbers:
+        insert_gk(d, n)
+    print([query_gk(d, x) for x in [0.05, 0.5, 0.95]])
