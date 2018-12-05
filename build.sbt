@@ -1,14 +1,4 @@
-import Dependencies._
-
 resolvers += "bintray-spark-packages" at "https://dl.bintray.com/spark-packages/maven/"
-
-// addSbtPlugin("org.spark-packages" % "sbt-spark-package" % "0.2.6")
-
-// spName := "greenwald-khanna-udaf"
-//
-// sparkVersion := "2.4.0"
-//
-// sparkComponents ++= Seq("mllib", "sql")
 
 val sparkVersion = "2.4.0"
 
@@ -26,10 +16,10 @@ resolvers += Resolver.mavenLocal
 lazy val root = (project in file(".")).
   settings(
     inThisBuild(List(
-      organization := "com.example",
+      organization := "org.github.nlzimmerman",
       scalaVersion := "2.12.7",
-      version      := "0.1.0-SNAPSHOT",
+      version      := "0.0.1",
     )),
     name := "greenwald-khanna udaf",
-    libraryDependencies += scalaTest % Test
+    libraryDependencies += "org.scalatest" %% "scalatest" % "3.0.5" % Test
   )
