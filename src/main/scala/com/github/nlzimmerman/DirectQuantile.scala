@@ -5,7 +5,8 @@ object DirectQuantile {
     val s: Seq[Double] = x.sorted
     val l: Long = s.length
     val targetRanks: Seq[Int] = quantiles.map(
-      (x) => Math.round(x*l).toInt-1
+      // math.ceil((seq.length - 1) * (p / 100.0)).toInt
+      (x) => Math.ceil((l-1)*x).toInt
     )
     targetRanks.map(s(_))
   }
