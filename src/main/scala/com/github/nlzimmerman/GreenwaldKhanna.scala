@@ -21,12 +21,26 @@ object GKQuantile {
     x.foreach(d.insert(_))
     quantiles.map((q: Double) => d.query(q))
   }
-  
+
+  def getQuantiles(
+    x: RDD[Double],
+    quantiles: Seq[Double],
+    epsilon: Double
+  ): Seq[Double] = {
+    val d: GKRecord = x.treeAggregate(
+      new GKRecord(epsilon)
+    )(
+      (a: GKRecord, b: Double) => a.insert(b),
+      (a: GKRecord, b: GKRecord) => a.combine(b)
+    )
+    quantiles.map((q: Double) => d.query(q))
+  }
+
   def getGroupedQuantiles[T: ClassTag](
     r: RDD[(T, Double)],
     quantiles: Seq[Double],
     epsilon: Double = 0.01
-  ): RDD[(T, (Double, Double))] = {
+  ): PairRDDFunctions[(T, Double), Double] = {
     val p: PairRDDFunctions[T, Double] = new PairRDDFunctions[T, Double](r)
 
     val aggregated: PairRDDFunctions[T, GKRecord] = p.aggregateByKey[GKRecord](
@@ -43,6 +57,10 @@ object GKQuantile {
           (q: Double) => (q, a.query(q))
         )
       }: Seq[(Double, Double)]
+    ).map(
+      // shifts from (key, (quantile, value)) to
+      // ((key, quantile), value)
+      (x: (T, (Double, Double))) => ((x._1, x._2._1), x._2._2)
     )
   }
 }

@@ -13,6 +13,14 @@ object TestParams {
 }
 
 object Util {
+  import org.apache.spark.sql.SparkSession
+  lazy val spark: SparkSession = {
+    SparkSession.
+    builder().
+    master("local[4]").
+    appName("example").
+    getOrCreate()
+  }
   import org.apache.commons.math3.special.Erf
   def inverseNormalCDF(q: Double): Double =
     math.sqrt(2)*Erf.erfInv(2*q-1)
@@ -65,7 +73,7 @@ object NormalNumbers {
 }
 
 
-class MainSpec extends WordSpec {
+class MainSuite extends WordSpec {
 
   "DirectQuantile" should {
     "be able to invert the exact normal distribution" in {
@@ -112,6 +120,75 @@ class MainSpec extends WordSpec {
       }
       "epsilon = 0.05" in {
         gkCheckFast(0.05)
+      }
+    }
+  }
+}
+
+class SparkSuite extends WordSpec {
+  "GKQuantile" should {
+    "be able to invert the normal distribution in Spark" when {
+      import org.apache.log4j.{Level, Logger}
+      Logger.getLogger("org.apache.spark").setLevel(Level.WARN)
+      Logger.getLogger("akka").setLevel(Level.WARN)
+      import Util._
+      import NormalNumbers._
+      import TestParams._
+      import org.apache.spark.rdd.RDD
+      val n0: RDD[Double] = spark.
+        sparkContext.
+        parallelize(numbers)
+      def gkCheckFast(epsilon: Double): Unit = {
+        val bounds: Seq[(Double, Double)] = inverseNormalCDFBounds(targets, epsilon)
+        val n: Seq[Double] = GKQuantile.getQuantiles(numbers, targets, epsilon)
+        boundsCheck(n, bounds)
+      }
+      "epsilon = 0.005" in {
+        gkCheckFast(0.005)
+      }
+      "epsilon = 0.01" in {
+        gkCheckFast(0.01)
+      }
+      "epsilon = 0.05" in {
+        gkCheckFast(0.05)
+      }
+
+
+    }
+    "be able to invert the normal distribution in Spark by key" when {
+      import org.apache.log4j.{Level, Logger}
+      Logger.getLogger("org.apache.spark").setLevel(Level.WARN)
+      Logger.getLogger("akka").setLevel(Level.WARN)
+      import Util._
+      import NormalNumbers._
+      import TestParams._
+      import org.apache.spark.rdd.{RDD, PairRDDFunctions}
+      val n0: RDD[(String, Double)] = spark.
+        sparkContext.
+        parallelize(numbers).
+        map((x) => ("a", x))
+      val n1: RDD[(String, Double)] = spark.
+        sparkContext.
+        parallelize(numbers2).
+        map((x) => ("b", x))
+      val nr: RDD[(String, Double)] = n0.union(n1).repartition(100)
+      def gkCheckSpark(epsilon: Double): Unit = {
+        val bounds: Seq[(Double, Double)] = inverseNormalCDFBounds(targets, epsilon)
+        val quantiles: Map[(String, Double), Double] =
+          GKQuantile.getGroupedQuantiles(nr, targets, epsilon).collectAsMap.toMap
+        val aValues: Seq[Double] = targets.map((x: Double) => quantiles(("a", x)))
+        val bValues: Seq[Double] = targets.map((x: Double) => quantiles(("b", x)))
+        boundsCheck(aValues, bounds)
+        boundsCheck(bValues, bounds)
+      }
+      "epsilon = 0.005" in {
+        gkCheckSpark(0.005)
+      }
+      "epsilon = 0.01" in {
+        gkCheckSpark(0.01)
+      }
+      "epsilon = 0.05" in {
+        gkCheckSpark(0.05)
       }
     }
   }
