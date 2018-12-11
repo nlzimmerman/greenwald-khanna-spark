@@ -5,7 +5,11 @@ import collection.mutable.ListBuffer
 // For now this is a line-for-line rewrite of what I did in Python;
 // Then I'll move it into a class
 
-class GKEntry(val v: Double, var g: Long, var delta: Long) {
+class GKEntry(
+  val v: Double,
+  var g: Long,
+  var delta: Long
+) extends Serializable {
   override def toString: String = s"($v, $g, $delta)"
   def copy(): GKEntry = new GKEntry(v, g, delta)
 }
@@ -14,10 +18,10 @@ class GKRecord(
   val epsilon: Double,
   val sample: ListBuffer[GKEntry] = new ListBuffer[GKEntry],
   var count: Long = 0,
-) {
+) extends Serializable {
   val compressThreshold: Long = (1.0/(2.0*epsilon)).toLong
 
-  def insert(v: Double): Unit = {
+  def insert(v: Double): GKRecord = {
     if (
       (sample.length == 0) ||
       (v < sample.head.v)
@@ -40,7 +44,7 @@ class GKRecord(
     if (count % compressThreshold == 0) {
       compress
     }
-
+    this
   }
   def compress(): Unit = {
     var i: Int = 1
@@ -107,15 +111,18 @@ class GKRecord(
               (a, b)
             } else {
               val a: GKEntry = thatSample(0).copy
-              thisSample.remove(0)
+              // there was a typo here where I did
+              // thisSample.remove(0)
+              // Which gives a runtime error.
+              thatSample.remove(0)
               val b: GKEntry = thisSample.find(
                 (x) => x.v > a.v
               ).get
               (a, b)
             }
           }
-          val newDelta: Long = thisElement.delta + otherNextElement.delta +
-            otherNextElement.g - 1
+          val newDelta: Long = thisElement.delta +
+            otherNextElement.delta + otherNextElement.g - 1
           thisElement.delta = newDelta
           thisElement
         }
