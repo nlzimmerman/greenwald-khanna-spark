@@ -5,6 +5,48 @@ import collection.mutable.ListBuffer
 // For now this is a line-for-line rewrite of what I did in Python;
 // Then I'll move it into a class
 
+object GKQuantile {
+  import org.apache.spark.SparkContext._
+  import org.apache.spark.rdd.RDD
+  import org.apache.spark.rdd.PairRDDFunctions
+  // oof
+  // https://stackoverflow.com/questions/16921168/scala-generic-method-no-classtag-available-for-t
+  import scala.reflect.ClassTag
+  def getQuantiles(
+    x: Seq[Double],
+    quantiles: Seq[Double],
+    epsilon: Double=0.01
+  ): Seq[Double] = {
+    val d: GKRecord = new GKRecord(epsilon)
+    x.foreach(d.insert(_))
+    quantiles.map((q: Double) => d.query(q))
+  }
+  
+  def getGroupedQuantiles[T: ClassTag](
+    r: RDD[(T, Double)],
+    quantiles: Seq[Double],
+    epsilon: Double = 0.01
+  ): RDD[(T, (Double, Double))] = {
+    val p: PairRDDFunctions[T, Double] = new PairRDDFunctions[T, Double](r)
+
+    val aggregated: PairRDDFunctions[T, GKRecord] = p.aggregateByKey[GKRecord](
+      new GKRecord(epsilon)
+    )(
+      (g: GKRecord, v: Double) => {
+        g.insert(v)
+      }: GKRecord,
+      (a: GKRecord, b: GKRecord) => { a.combine(b) }: GKRecord
+    )
+    aggregated.flatMapValues(
+      (a: GKRecord) => {
+        quantiles.map(
+          (q: Double) => (q, a.query(q))
+        )
+      }: Seq[(Double, Double)]
+    )
+  }
+}
+
 class GKEntry(
   val v: Double,
   var g: Long,
@@ -152,8 +194,4 @@ class GKRecord(
       toReturn
     }
   }
-}
-
-object GreenwaldKhannaClassless {
-
 }

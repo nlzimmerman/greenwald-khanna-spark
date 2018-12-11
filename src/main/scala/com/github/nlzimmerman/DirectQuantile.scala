@@ -1,7 +1,7 @@
 package com.github.nlzimmerman
 
 object DirectQuantile {
-  def quantile(x: Seq[Double], quantiles: Seq[Double]): Seq[Double] = {
+  def getQuantiles(x: Seq[Double], quantiles: Seq[Double]): Seq[Double] = {
     val s: Seq[Double] = x.sorted
     val l: Long = s.length
     val targetRanks: Seq[Int] = quantiles.map(
@@ -10,4 +10,5 @@ object DirectQuantile {
     )
     targetRanks.map(s(_))
   }
+
 }
