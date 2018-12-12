@@ -76,8 +76,8 @@ case class GKEntry(
 
 class GKRecord(
   val epsilon: Double,
-  val sample: ListBuffer[GKEntry] = new ListBuffer[GKEntry],
-  var count: Long = 0,
+  val sample: List[GKEntry] = List[GKEntry](),
+  val count: Long = 0,
 ) extends Serializable {
   val compressThreshold: Long = (1.0/(2.0*epsilon)).toLong
 
@@ -108,14 +108,13 @@ class GKRecord(
         listInsert(sample.toList, i, GKEntry(v, 1, delta))
       }
     }
-    count += 1
 
     val newRecord: GKRecord = new GKRecord(
       epsilon,
-      newSample.to[ListBuffer],
-      count
+      newSample,
+      count + 1
     )
-    if (count % compressThreshold == 0) {
+    if (newRecord.count % compressThreshold == 0) {
       newRecord.compress
     } else {
       newRecord
@@ -137,41 +136,33 @@ class GKRecord(
         i += 1
       }
     }
-    (new GKRecord(epsilon, out, count))
+    (new GKRecord(epsilon, out.toList, count))
   }
   def query(quantile: Double): Double = {
-    val desired_rank: Long = math.ceil(quantile * (count - 1)).toLong
-    val rank_epsilon: Double = epsilon * count
-    var starting_rank: Long = 0
-    // it's possible to do this without a while loop; I just haven't
-    // gotten there yet.
-    // This is not good practice in Scala, just a direct rewrite of the Python
-    // for now.
-    var i: Int = 0
-    var toReturn: Double = Double.NegativeInfinity
-    var break: Boolean = false
-    while (i < sample.length && !break) {
-      starting_rank += sample(i).g
-      val ending_rank: Long = starting_rank + sample(i).delta
-      if (
-        ((desired_rank-starting_rank) <= rank_epsilon) &&
-        ((ending_rank-desired_rank) <= rank_epsilon)
-      ) {
-          toReturn = sample(i).v
-          break = true
-      } else {
-        i += 1
-      }
-    }
-    toReturn
+    val desiredRank: Long = math.ceil(quantile * (count - 1)).toLong
+    val rankEpsilon: Double = epsilon * count
+    // the tail is to drop the leading 0 added by scanLeft
+    // scanLeft takes the cumulative sum (at least it does
+    // does when the combine op is addition :)
+    val startingRanks: Seq[Long] = sample.map(_.g).scanLeft(0L)(_ + _).tail
+    val endingRanks: Seq[Long] = startingRanks.zip(sample).map({
+      case (a: Long, b: GKEntry) => a+b.delta
+    })
+    val idx: Int = startingRanks.zip(endingRanks).indexWhere({
+      case (startingRank: Long, endingRank: Long) => (
+        (desiredRank-startingRank) <= rankEpsilon &&
+        (endingRank-desiredRank) <= rankEpsilon
+      )
+    })
+    sample(idx).v
   }
 
   def combine(that: GKRecord): GKRecord = {
     if (this.sample.length == 0) that
     else if (that.sample.length == 0) this
     else {
-      val thisSample: ListBuffer[GKEntry] = sample.clone
-      val thatSample: ListBuffer[GKEntry] = that.sample.clone
+      val thisSample: ListBuffer[GKEntry] = sample.to[ListBuffer]
+      val thatSample: ListBuffer[GKEntry] = that.sample.to[ListBuffer]
       val out: ListBuffer[GKEntry] = new ListBuffer[GKEntry]
       while (thisSample.length > 0 && thatSample.length > 0) {
         // This could be much, much better.
@@ -217,7 +208,7 @@ class GKRecord(
       val newCount: Long = count + that.count
       val toReturn: GKRecord = new GKRecord(
         newEpsilon,
-        out,
+        out.toList,
         newCount
       )
       if (countIncrease >= math.floor(1.0/(2.0*newEpsilon))) {
