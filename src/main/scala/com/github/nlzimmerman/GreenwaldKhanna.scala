@@ -17,8 +17,9 @@ object GKQuantile {
     quantiles: Seq[Double],
     epsilon: Double=0.01
   ): Seq[Double] = {
-    val d: GKRecord = new GKRecord(epsilon)
-    x.foreach(d.insert(_))
+    val d: GKRecord = x.foldLeft(new GKRecord(epsilon))(
+      (x: GKRecord, y: Double) => x.insert(y)
+    )
     quantiles.map((q: Double) => d.query(q))
   }
 
@@ -65,15 +66,6 @@ object GKQuantile {
   }
 }
 
-// class GKEntry(
-//   val v: Double,
-//   var g: Long,
-//   var delta: Long
-// ) extends Serializable {
-//   override def toString: String = s"($v, $g, $delta)"
-//   def copy(): GKEntry = new GKEntry(v, g, delta)
-// }
-
 // beware — the right basis for comparison is usually just going to be on v
 // but I think it's still fine to make this a case class
 case class GKEntry(
@@ -89,30 +81,44 @@ class GKRecord(
 ) extends Serializable {
   val compressThreshold: Long = (1.0/(2.0*epsilon)).toLong
 
+  def listInsert[T](l: List[T], i: Int, a: T): List[T] = {
+    (l.dropRight(l.length-i) :+ a) ::: l.drop(i)
+  }
   def insert(v: Double): GKRecord = {
-    if (
-      (sample.length == 0) ||
-      (v < sample.head.v)
-    ) {
-      sample.insert(0, GKEntry(v, 1, 0))
-      // catch the edge case where v is greater than any value in sample here.
-    } else if (v > sample.last.v) {
-      sample.insert(sample.length, GKEntry(v, 1, 0))
-    } else {
-      val i: Int = sample.indexWhere(
-        (g: GKEntry) => v < g.v
-      )
-      if (i < 1) {
-        throw new Exception("i should be greater than 1")
+    val newSample: List[GKEntry] = {
+      if (
+        (sample.length == 0) ||
+        (v < sample.head.v)
+      ) {
+        //sample.insert(0, GKEntry(v, 1, 0))
+        listInsert(sample.toList, 0, GKEntry(v,1,0))
+        // catch the edge case where v is greater than any value in sample here.
+      } else if (v > sample.last.v) {
+        //sample.insert(sample.length, GKEntry(v, 1, 0))
+        listInsert(sample.toList, sample.length, GKEntry(v,1,0))
+      } else {
+        val i: Int = sample.indexWhere(
+          (g: GKEntry) => v < g.v
+        )
+        if (i < 1) {
+          throw new Exception("i should be greater than 1")
+        }
+        val delta: Long = math.floor(2*epsilon*count).toLong
+        //sample.insert(i, GKEntry(v, 1, delta))
+        listInsert(sample.toList, i, GKEntry(v, 1, delta))
       }
-      val delta: Long = math.floor(2*epsilon*count).toLong
-      sample.insert(i, GKEntry(v, 1, delta))
     }
     count += 1
+
+    val newRecord: GKRecord = new GKRecord(
+      epsilon,
+      newSample.to[ListBuffer],
+      count
+    )
     if (count % compressThreshold == 0) {
-      compress
+      newRecord.compress
     }
-    this
+    newRecord
   }
   def compress(): Unit = {
     var i: Int = 1
