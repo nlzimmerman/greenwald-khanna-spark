@@ -117,10 +117,11 @@ class GKRecord(
     )
     if (count % compressThreshold == 0) {
       newRecord.compress
+    } else {
+      newRecord
     }
-    newRecord
   }
-  def compress(): Unit = {
+  def compress(): GKRecord = {
     var i: Int = 1
     while (i < sample.length-1) {
       if (
@@ -135,6 +136,7 @@ class GKRecord(
         i += 1
       }
     }
+    this
   }
   def query(quantile: Double): Double = {
     val desired_rank: Long = math.ceil(quantile * (count - 1)).toLong
@@ -219,8 +221,9 @@ class GKRecord(
       )
       if (countIncrease >= math.floor(1.0/(2.0*newEpsilon))) {
         toReturn.compress
+      } else {
+        toReturn
       }
-      toReturn
     }
   }
 }
