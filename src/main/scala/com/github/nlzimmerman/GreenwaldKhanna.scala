@@ -65,14 +65,22 @@ object GKQuantile {
   }
 }
 
-class GKEntry(
+// class GKEntry(
+//   val v: Double,
+//   var g: Long,
+//   var delta: Long
+// ) extends Serializable {
+//   override def toString: String = s"($v, $g, $delta)"
+//   def copy(): GKEntry = new GKEntry(v, g, delta)
+// }
+
+// beware — the right basis for comparison is usually just going to be on v
+// but I think it's still fine to make this a case class
+case class GKEntry(
   val v: Double,
-  var g: Long,
-  var delta: Long
-) extends Serializable {
-  override def toString: String = s"($v, $g, $delta)"
-  def copy(): GKEntry = new GKEntry(v, g, delta)
-}
+  val g: Long,
+  val delta: Long
+)
 
 class GKRecord(
   val epsilon: Double,
@@ -86,10 +94,10 @@ class GKRecord(
       (sample.length == 0) ||
       (v < sample.head.v)
     ) {
-      sample.insert(0, new GKEntry(v, 1, 0))
+      sample.insert(0, GKEntry(v, 1, 0))
       // catch the edge case where v is greater than any value in sample here.
     } else if (v > sample.last.v) {
-      sample.insert(sample.length, new GKEntry(v, 1, 0))
+      sample.insert(sample.length, GKEntry(v, 1, 0))
     } else {
       val i: Int = sample.indexWhere(
         (g: GKEntry) => v < g.v
@@ -98,7 +106,7 @@ class GKRecord(
         throw new Exception("i should be greater than 1")
       }
       val delta: Long = math.floor(2*epsilon*count).toLong
-      sample.insert(i, new GKEntry(v, 1, delta))
+      sample.insert(i, GKEntry(v, 1, delta))
     }
     count += 1
     if (count % compressThreshold == 0) {
@@ -114,8 +122,8 @@ class GKRecord(
           sample(i).g + sample(i+1).g + sample(i+1).delta
         ) < math.floor(2*epsilon*count)
       ) {
-        val ss = sample(i)
-        sample(i+1).g += sample(i).g
+        sample(i+1) = sample(i+1).copy(g=(sample(i+1).g+sample(i).g))
+        //sample(i+1).g += sample(i).g
         sample.remove(i)
       } else {
         i += 1
@@ -163,18 +171,17 @@ class GKRecord(
             if (thisSample(0).v < thatSample(0).v) {
               // I'm not sure if it's safe to not copy this in Spark.
               // it should be fine in straight Scala.
-              val a: GKEntry = thisSample(0).copy
-              thisSample.remove(0)
+              val a: GKEntry = thisSample.remove(0)
               val b: GKEntry = thatSample.find(
                 (x) => x.v > a.v
               ).get // will throw an error if there is none. That is correct
               (a, b)
             } else {
-              val a: GKEntry = thatSample(0).copy
+              val a: GKEntry = thatSample.remove(0)
               // there was a typo here where I did
               // thisSample.remove(0)
               // Which gives a runtime error.
-              thatSample.remove(0)
+
               val b: GKEntry = thisSample.find(
                 (x) => x.v > a.v
               ).get
@@ -183,20 +190,18 @@ class GKRecord(
           }
           val newDelta: Long = thisElement.delta +
             otherNextElement.delta + otherNextElement.g - 1
-          thisElement.delta = newDelta
-          thisElement
+          //thisElement.delta = newDelta
+          thisElement.copy(delta=newDelta)
         }
       } // either thisSample or thatSample has been exhausted now
       // again, I'm of the impression that it's NOT safe to NOT copy
       // thisSample and thatSample and just do a ++=
       // which is why I'm doing this.
       while (thisSample.length > 0) {
-        out += thisSample(0).copy
-        thisSample.remove(0)
+        out += thisSample.remove(0)
       }
       while (thatSample.length > 0) {
-        out += thatSample(0).copy
-        thatSample.remove(0)
+        out += thatSample.remove(0)
       }
       val newEpsilon: Double = math.max(epsilon, that.epsilon)
       val countIncrease: Long = math.min(count, that.count)
