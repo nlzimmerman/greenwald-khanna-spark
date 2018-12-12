@@ -220,15 +220,8 @@ class InternalSuite extends WordSpec {
             }
           }
         )
-        gk.compress
-        println(gk.sample.length)
-        gk.compress
-        println(gk.sample.length)
-        gk.compress
-        println(gk.sample.length)
-        gk.compress
-        println(gk.sample.length)
-        println(Seq(0.05, 0.5, 0.95).map(gk.query(_)))
+        println(Seq(0.05, 0.8, 0.95).map(gk.query(_)))
+        println(Seq(0.05, 0.8, 0.95).map(gk.compress.compress.compress.compress.query(_)))
       }
     }
   }

@@ -123,20 +123,21 @@ class GKRecord(
   }
   def compress(): GKRecord = {
     var i: Int = 1
-    while (i < sample.length-1) {
+    val out: ListBuffer[GKEntry] = sample.to[ListBuffer].clone
+    while (i < out.length-1) {
       if (
         (
-          sample(i).g + sample(i+1).g + sample(i+1).delta
+          out(i).g + out(i+1).g + out(i+1).delta
         ) < math.floor(2*epsilon*count)
       ) {
-        sample(i+1) = sample(i+1).copy(g=(sample(i+1).g+sample(i).g))
+        out(i+1) = out(i+1).copy(g=(out(i+1).g+out(i).g))
         //sample(i+1).g += sample(i).g
-        sample.remove(i)
+        out.remove(i)
       } else {
         i += 1
       }
     }
-    this
+    (new GKRecord(epsilon, out, count))
   }
   def query(quantile: Double): Double = {
     val desired_rank: Long = math.ceil(quantile * (count - 1)).toLong
