@@ -1,7 +1,7 @@
 package com.github.nlzimmerman
 
 import collection.mutable.ListBuffer
-
+import scala.annotation.tailrec
 // For now this is a line-for-line rewrite of what I did in Python;
 // Then I'll move it into a class
 
@@ -145,74 +145,73 @@ class GKRecord(
     def isCombinable(a: GKEntry, b: GKEntry): Boolean = {
         (a.g + b.g + b.delta) < threshold
     }
-    def combiner(a: GKEntry, b: GKEntry): GKEntry = {
+    def combine(a: GKEntry, b: GKEntry): GKEntry = {
       GKEntry(b.v, a.g+b.g, b.delta)
     }
 
 
-    case class Record(tally: List[GKEntry], previous: Option[GKEntry])
-
-    def updateRecord(r: Record, next: GKEntry): Record = {
-      r.previous match {
-        // if nothing is carried over from the previous entry,
-        // pass this along to the next one. This will only match
-        // at the beginning of the list
-        case None => {
-          Record(r.tally, Some(next))
-        }
-        // if we can combine the previous entry and the next one,
-        // do so and pass it along. If we can't, add the previous
-        // to the list and pass the next one along.
-        case Some(previous: GKEntry) => {
-          if (isCombinable(previous, next)) {
-            Record(r.tally, Some(combiner(previous, next)))
-          } else {
-            // if we can't combine the prevous entry and the next one,
-            // append thee previous entry to the tally and pass the next along
-            Record(r.tally :+ previous, Some(next))
-          }
-        }
+    @tailrec
+    def collapse(
+      previous: GKEntry,
+      remainder: List[GKEntry],
+      acc: List[GKEntry] = Nil,
+    ): List[GKEntry] = {
+      if (remainder.isEmpty) {
+        acc :+ previous
+      } else if (isCombinable(previous, remainder.head)) {
+        collapse(
+          combine(previous, remainder.head),
+          remainder.tail,
+          acc
+        )
+      } else {
+        // not combinable so append previous acc and
+        // make the new one
+        collapse(
+          remainder.head,
+          remainder.tail,
+          acc :+ previous
+        )
       }
     }
-    val newRecord: Record = sample.foldLeft(
-      Record(List[GKEntry](), None)
-    )(
-      updateRecord
-    )
-    val out: List[GKEntry] = newRecord.previous match {
-      case None => newRecord.tally
-      case Some(f) => newRecord.tally :+ f
+    val out: List[GKEntry] = if (sample.length > 0) {
+      collapse(sample.head, sample.tail)
+    } else {
+      sample
     }
-    //println(sample)
-    // while (i < sample.length) {
-    //   // if i = 1 this keeps elements i..N
-    //   // so the first element in remainder is sample(i)
-    //   val remainder: List[GKEntry] = sample.drop(i)
-    //   val ranges: IndexedSeq[Long] = (0 until remainder.length).map(
-    //     // remainder(0).g + remainder(0).delta
-    //     // remainder(0).g + remainder(1).g + remainder(1).delta
-    //     // remainder(0).g + remainder(1).g + remainder(2).g remainder(2).delta
-    //     // ETC
-    //     (i: Int) => remainder.slice(0,i+1).map(_.g).reduce(_ + _) +
-    //                 remainder(i).delta
-    //   )
-    //   require(ranges.length == remainder.length)
-    //   // we need to find the new index so we can increment i anyway.
-    //   // 2 because…
-    //   // if nothing matches, we're just appending the first element in reemainder
-    //   // (and incrementing i by 1 so that next time we drop that first element)
-    //   // if the 0th elment matches,
-    //   val toCompressIndex: Int = 2 + ranges.lastIndexWhere(
-    //     (r: Long) => r < threshold
-    //   )
-    //   // if toCompressIndex is 1, it means we're just adding the first item
-    //   // and incrementing i by 1, etc.
-    //   out.append(combiner(remainder.slice(0, toCompressIndex)))
-    //   i += toCompressIndex
+    // case class Record(tally: List[GKEntry], previous: Option[GKEntry])
+    //
+    // def updateRecord(r: Record, next: GKEntry): Record = {
+    //   r.previous match {
+    //     // if nothing is carried over from the previous entry,
+    //     // pass this along to the next one. This will only match
+    //     // at the beginning of the list
+    //     case None => {
+    //       Record(r.tally, Some(next))
+    //     }
+    //     // if we can combine the previous entry and the next one,
+    //     // do so and pass it along. If we can't, add the previous
+    //     // to the list and pass the next one along.
+    //     case Some(previous: GKEntry) => {
+    //       if (isCombinable(previous, next)) {
+    //         Record(r.tally, Some(combiner(previous, next)))
+    //       } else {
+    //         // if we can't combine the prevous entry and the next one,
+    //         // append thee previous entry to the tally and pass the next along
+    //         Record(r.tally :+ previous, Some(next))
+    //       }
+    //     }
+    //   }
     // }
-    //println(out.toList)
-    // println(sample.length)
-    // println(out.length)
+    // val newRecord: Record = sample.foldLeft(
+    //   Record(List[GKEntry](), None)
+    // )(
+    //   updateRecord
+    // )
+    // val out: List[GKEntry] = newRecord.previous match {
+    //   case None => newRecord.tally
+    //   case Some(f) => newRecord.tally :+ f
+    // }
 
     (new GKRecord(epsilon, out.toList, count))
   }
