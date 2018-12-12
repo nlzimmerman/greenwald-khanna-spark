@@ -158,16 +158,22 @@ if __name__ == "__main__":
     r = Random()
     r.seed(2210)
     numbers = list()
-    for _ in range(100000):
-        u = r.random()
-        v = r.random()
-        numbers.append(
-            (-2*log(u))**(0.5)*cos(2*pi*v)
+    n = 100
+    for i in range(n):
+        numbers.extend(
+            [
+                10*i+x for x in
+                    [1,5,2,6,3,7,4,8,0,9]
+            ]
         )
-    print(numbers[-1])
+    numbers.append(n*10)
+
     import numpy as np
     print(np.quantile(numbers, [0.05, 0.5, 0.95]))
+    print(np.quantile(numbers, [0.04, 0.49, 0.94]))
     d = new_gk_dict(0.01)
     for n in numbers:
         insert_gk(d, n)
     print([query_gk(d, x) for x in [0.05, 0.5, 0.95]])
+    print(d['sample'])
+    print(len(d['sample']))

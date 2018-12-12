@@ -35,6 +35,15 @@ object Main extends App {
   //val g0: GKRecord = nr.treeAggregate(new GKRecord(0.01))((a: GKRecord, b: Double) => a.insert(b), (a: GKRecord, b: GKRecord) => a.combine(b))
   //println(Seq(0.05, 0.5, 0.95).map((x) => g0.query(x)))
   //d.sample.foreach(println(_))
+  val n: Int = 100
+  val numbers: Seq[Double] = (0 until n).flatMap(
+    (x: Int) => Seq(1,5,2,6,3,7,4,8,0,9).map((z: Int) => (z+10*x).toDouble)
+  ) :+ (n*10).toDouble
+  println(numbers.length)
+  println(DirectQuantile.getQuantiles(numbers, Seq(0.05, 0.5, 0.95)))
+  println(GKQuantile.getQuantiles(numbers, Seq(0.05, 0.5, 0.95)))
+  val gk: GKRecord = numbers.foldLeft(new GKRecord(0.01))((g, i) => g.insert(i))
+  println(gk.sample)
   Logger.getLogger("org.apache.spark").setLevel(Level.OFF)
   Logger.getLogger("akka").setLevel(Level.OFF)
 }
