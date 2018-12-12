@@ -91,11 +91,11 @@ class GKRecord(
         (v < sample.head.v)
       ) {
         //sample.insert(0, GKEntry(v, 1, 0))
-        listInsert(sample.toList, 0, GKEntry(v,1,0))
+        GKEntry(v,1,0) +: sample
         // catch the edge case where v is greater than any value in sample here.
       } else if (v > sample.last.v) {
         //sample.insert(sample.length, GKEntry(v, 1, 0))
-        listInsert(sample.toList, sample.length, GKEntry(v,1,0))
+        sample :+ GKEntry(v,1,0)
       } else {
         val i: Int = sample.indexWhere(
           (g: GKEntry) => v < g.v
@@ -105,7 +105,7 @@ class GKRecord(
         }
         val delta: Long = math.floor(2*epsilon*count).toLong
         //sample.insert(i, GKEntry(v, 1, delta))
-        listInsert(sample.toList, i, GKEntry(v, 1, delta))
+        listInsert(sample, i, GKEntry(v, 1, delta))
       }
     }
 
@@ -178,10 +178,6 @@ class GKRecord(
               (a, b)
             } else {
               val a: GKEntry = thatSample.remove(0)
-              // there was a typo here where I did
-              // thisSample.remove(0)
-              // Which gives a runtime error.
-
               val b: GKEntry = thisSample.find(
                 (x) => x.v > a.v
               ).get
@@ -194,15 +190,10 @@ class GKRecord(
           thisElement.copy(delta=newDelta)
         }
       } // either thisSample or thatSample has been exhausted now
-      // again, I'm of the impression that it's NOT safe to NOT copy
-      // thisSample and thatSample and just do a ++=
-      // which is why I'm doing this.
-      while (thisSample.length > 0) {
-        out += thisSample.remove(0)
-      }
-      while (thatSample.length > 0) {
-        out += thatSample.remove(0)
-      }
+      // so this just appends whichever isn't exhausted
+      out ++= thisSample
+      out ++= thatSample
+
       val newEpsilon: Double = math.max(epsilon, that.epsilon)
       val countIncrease: Long = math.min(count, that.count)
       val newCount: Long = count + that.count
@@ -211,7 +202,26 @@ class GKRecord(
         out.toList,
         newCount
       )
-      if (countIncrease >= math.floor(1.0/(2.0*newEpsilon))) {
+      /* The old test was
+      if (countIncrease >= math.floor(1.0/(2.0*newEpsilon)))
+         While I think this may in some sense be wrong, in the sense that it's
+         too conservative about when to compress.
+         In principle, we compress every time the count is a multiple of
+         1/(2*epsilon) — say, every time the count is a multiple of 50.
+         This compresses when the count grows by 50, but, for example,
+         It would miss the case where the old count is 48 and the new count is
+         51.
+
+         This new check attempts to see whether we've crossed over a threshold
+         by seeing how many times we ought to have compressed before combining records
+         and comparing it to how many times we ought to have compressed after it.
+      */
+      // these are Longs so it's floor division, which is what we want.
+      val newCompressionThreshold: Long = (1.0/(2.0*newEpsilon)).toLong
+      if (
+        countIncrease/newCompressionThreshold !=
+        newCount/newCompressionThreshold
+      ) {
         toReturn.compress
       } else {
         toReturn
