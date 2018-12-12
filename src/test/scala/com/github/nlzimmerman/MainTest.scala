@@ -204,7 +204,31 @@ class InternalSuite extends WordSpec {
         // cat test | sed 's/\[/Seq\(/g' | sed 's/\]/\)/g'
         val result: Seq[Seq[Int]] = Seq(Seq(0, 1, 0), Seq(16, 16, 0), Seq(32, 16, 0), Seq(40, 8, 0), Seq(55, 15, 0), Seq(65, 10, 0), Seq(75, 10, 0), Seq(85, 10, 0), Seq(95, 10, 0), Seq(105, 10, 0), Seq(115, 10, 0), Seq(125, 10, 0), Seq(135, 10, 0), Seq(151, 16, 0), Seq(161, 10, 0), Seq(171, 10, 0), Seq(181, 10, 0), Seq(191, 10, 0), Seq(201, 10, 0), Seq(211, 10, 0), Seq(221, 10, 0), Seq(231, 10, 0), Seq(241, 10, 0), Seq(251, 10, 0), Seq(261, 10, 0), Seq(271, 10, 0), Seq(281, 10, 0), Seq(291, 10, 0), Seq(301, 10, 0), Seq(311, 10, 0), Seq(321, 10, 0), Seq(331, 10, 0), Seq(341, 10, 0), Seq(351, 10, 0), Seq(361, 10, 0), Seq(371, 10, 0), Seq(381, 10, 0), Seq(391, 10, 0), Seq(401, 10, 0), Seq(411, 10, 0), Seq(421, 10, 0), Seq(431, 10, 0), Seq(441, 10, 0), Seq(451, 10, 0), Seq(461, 10, 0), Seq(471, 10, 0), Seq(481, 10, 0), Seq(491, 10, 0), Seq(501, 10, 0), Seq(511, 10, 0), Seq(521, 10, 0), Seq(531, 10, 0), Seq(541, 10, 0), Seq(551, 10, 0), Seq(561, 10, 0), Seq(571, 10, 0), Seq(581, 10, 0), Seq(591, 10, 0), Seq(601, 10, 0), Seq(611, 10, 0), Seq(621, 10, 0), Seq(631, 10, 0), Seq(641, 10, 0), Seq(651, 10, 0), Seq(661, 10, 0), Seq(671, 10, 0), Seq(681, 10, 0), Seq(691, 10, 0), Seq(701, 10, 0), Seq(711, 10, 0), Seq(721, 10, 0), Seq(731, 10, 0), Seq(741, 10, 0), Seq(751, 10, 0), Seq(761, 10, 0), Seq(771, 10, 0), Seq(781, 10, 0), Seq(791, 10, 0), Seq(801, 10, 0), Seq(811, 10, 0), Seq(821, 10, 0), Seq(831, 10, 0), Seq(841, 10, 0), Seq(851, 10, 0), Seq(861, 10, 0), Seq(871, 10, 0), Seq(881, 10, 0), Seq(891, 10, 0), Seq(901, 10, 0), Seq(902, 1, 18), Seq(911, 9, 0), Seq(912, 1, 18), Seq(921, 9, 0), Seq(922, 1, 18), Seq(931, 9, 0), Seq(932, 1, 18), Seq(941, 9, 0), Seq(942, 1, 18), Seq(949, 7, 0), Seq(951, 2, 0), Seq(952, 1, 19), Seq(953, 1, 19), Seq(959, 6, 0), Seq(961, 2, 0), Seq(962, 1, 19), Seq(963, 1, 19), Seq(969, 6, 0), Seq(971, 2, 0), Seq(972, 1, 19), Seq(973, 1, 19), Seq(979, 6, 0), Seq(981, 2, 0), Seq(982, 1, 19), Seq(983, 1, 19), Seq(989, 6, 0), Seq(991, 2, 0), Seq(992, 1, 19), Seq(993, 1, 19), Seq(999, 6, 0), Seq(1000, 1, 0))
         // blah
-        println(result.length)
+        assert(result.length==120)
+        val numbers: Seq[Double] = (0 until 100).flatMap(
+          (x: Int) => Seq(1,5,2,6,3,7,4,8,0,9).map((z: Int) => (z+10*x).toDouble)
+        ) :+ (100*10).toDouble
+        assert(numbers.length==1001)
+        val gk: GKRecord = numbers.foldLeft(new GKRecord(0.01))((g, i) => g.insert(i))
+        assert(gk.sample.length==120)
+        gk.sample.zip(result).foreach(
+          {
+            case (x: GKEntry, y: Seq[Int]) => {
+              assert(x.v==y(0).toDouble)
+              assert(x.g==y(1))
+              assert(x.delta==y(2))
+            }
+          }
+        )
+        gk.compress
+        println(gk.sample.length)
+        gk.compress
+        println(gk.sample.length)
+        gk.compress
+        println(gk.sample.length)
+        gk.compress
+        println(gk.sample.length)
+        println(Seq(0.05, 0.5, 0.95).map(gk.query(_)))
       }
     }
   }
