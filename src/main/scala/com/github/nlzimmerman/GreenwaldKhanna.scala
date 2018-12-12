@@ -77,7 +77,7 @@ case class GKEntry(
 class GKRecord(
   val epsilon: Double,
   val sample: ListBuffer[GKEntry] = new ListBuffer[GKEntry],
-  var count: Long = 0,
+  val count: Long = 0,
 ) extends Serializable {
   val compressThreshold: Long = (1.0/(2.0*epsilon)).toLong
 
@@ -108,33 +108,74 @@ class GKRecord(
         listInsert(sample.toList, i, GKEntry(v, 1, delta))
       }
     }
-    count += 1
+    val newCount: Long = count + 1
 
     val newRecord: GKRecord = new GKRecord(
       epsilon,
       newSample.to[ListBuffer],
-      count
+      newCount
     )
     if (count % compressThreshold == 0) {
       newRecord.compress
+    } else {
+      newRecord
     }
-    newRecord
   }
-  def compress(): Unit = {
+  def compress(): GKRecord = {
     var i: Int = 1
-    while (i < sample.length-1) {
+    var out: ListBuffer[GKEntry] = sample.to[ListBuffer].clone
+    while (i < out.length-1) {
       if (
         (
-          sample(i).g + sample(i+1).g + sample(i+1).delta
+          out(i).g + out(i+1).g + out(i+1).delta
         ) < math.floor(2*epsilon*count)
       ) {
-        sample(i+1) = sample(i+1).copy(g=(sample(i+1).g+sample(i).g))
+        out(i+1) = out(i+1).copy(g=(sample(i+1).g+sample(i).g))
         //sample(i+1).g += sample(i).g
-        sample.remove(i)
+        out.remove(i)
       } else {
         i += 1
       }
     }
+    /*
+    while (i < sample.length-1) {
+      val first: GKEntry = sampleList(i)
+      val remainder: Seq[GKEntry] = sampleList.drop(i+1).toSeq
+      // there is probably a faster but still functional
+      // way to do this
+      // this goes 1, 2, 3… remainder.length
+      // so that slice won't need to have 1 added
+      val ranges: IndexedSeq[Long] = (1 to remainder.length).map(
+        (i: Int) => {
+          // just the first N elements of sampleList
+          val sub: Seq[GKEntry] = remainder.slice(0, i)
+          first.g + sub.map(_.g).reduce(_ + _) + sub.last.delta
+        }
+      )
+      val stride: Int = ranges.lastIndexWhere((x: Long) => x < math.floor(2*epsilon*count))
+      if (stride == -1) {
+        // nothing to combine
+        out += first
+      } else {
+        val last: GKEntry = remainder(stride)
+        val combinedRecord: GKEntry = GKEntry(
+          last.v,
+          remainder.slice(0, stride+1).map(_.g).reduce(_ + _),
+          last.delta
+        )
+        out += combinedRecord
+      }
+      // plus one because we are incrementing, plus one because
+      // remainder does not include the first element
+      i += (stride + 2)
+    }
+    */
+    new GKRecord(
+      epsilon,
+      out,
+      count
+    )
+
   }
   def query(quantile: Double): Double = {
     val desired_rank: Long = math.ceil(quantile * (count - 1)).toLong
@@ -219,8 +260,9 @@ class GKRecord(
       )
       if (countIncrease >= math.floor(1.0/(2.0*newEpsilon))) {
         toReturn.compress
+      } else {
+        toReturn
       }
-      toReturn
     }
   }
 }
