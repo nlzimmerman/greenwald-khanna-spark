@@ -194,6 +194,7 @@ class SparkSuite extends WordSpec {
   }
 }
 
+/*
 class InternalSuite extends WordSpec {
   "GKQuantile" should {
     "be able to specifically recreate the Python internals" when {
@@ -226,3 +227,4 @@ class InternalSuite extends WordSpec {
     }
   }
 }
+*/

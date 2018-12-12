@@ -120,9 +120,9 @@ class GKRecord(
       newRecord
     }
   }
-  def compress(): GKRecord = {
+  // OBSOLETE
+  def compressOld(): GKRecord = {
     var i: Int = 1
-    println(sample.length)
     val out: ListBuffer[GKEntry] = sample.to[ListBuffer].clone
     while (i < out.length-1) {
       if (
@@ -131,62 +131,89 @@ class GKRecord(
         ) < math.floor(2*epsilon*count)
       ) {
         out(i+1) = out(i+1).copy(g=(out(i+1).g+out(i).g))
-        //sample(i+1).g += sample(i).g
+        //out(i+1).g += out(i).g
         out.remove(i)
       } else {
         i += 1
       }
     }
     println(out.length)
-
-    """
-    val out: ListBuffer[GKEntry] = ListBuffer(sample.head)
+    (new GKRecord(epsilon, out.toList, count))
+  }
+  def compress(): GKRecord = {
     val threshold: Long = math.floor(2*epsilon*count).toLong
-    def combiner(in: Seq[GKEntry]): GKEntry = {
-      val v: Double = in.last.v
-      val delta: Long = in.last.delta
-      val g: Long = in.map(_.g).reduce(_ + _)
-      GKEntry(v, g, delta)
+    def isCombinable(a: GKEntry, b: GKEntry): Boolean = {
+        (a.g + b.g + b.delta) < threshold
+    }
+    def combiner(a: GKEntry, b: GKEntry): GKEntry = {
+      GKEntry(b.v, a.g+b.g, b.delta)
+    }
+
+
+    case class Record(tally: List[GKEntry], previous: Option[GKEntry])
+
+    def updateRecord(r: Record, next: GKEntry): Record = {
+      r.previous match {
+        // if nothing is carried over from the previous entry,
+        // pass this along to the next one. This will only match
+        // at the beginning of the list
+        case None => {
+          Record(r.tally, Some(next))
+        }
+        // if we can combine the previous entry and the next one,
+        // do so and pass it along. If we can't, add the previous
+        // to the list and pass the next one along.
+        case Some(previous: GKEntry) => {
+          if (isCombinable(previous, next)) {
+            Record(r.tally, Some(combiner(previous, next)))
+          } else {
+            // if we can't combine the prevous entry and the next one,
+            // append thee previous entry to the tally and pass the next along
+            Record(r.tally :+ previous, Some(next))
+          }
+        }
+      }
+    }
+    val newRecord: Record = sample.foldLeft(
+      Record(List[GKEntry](), None)
+    )(
+      updateRecord
+    )
+    val out: List[GKEntry] = newRecord.previous match {
+      case None => newRecord.tally
+      case Some(f) => newRecord.tally :+ f
     }
     //println(sample)
-    while (i < sample.length) {
-      // if i = 1 this keeps elements i..N
-      // so the first element in remainder is sample(i)
-      val remainder: List[GKEntry] = sample.drop(i)
-      val ranges: IndexedSeq[Long] = (0 until remainder.length).map(
-        // remainder(0).g + remainder(0).delta
-        // remainder(0).g + remainder(1).g + remainder(1).delta
-        // remainder(0).g + remainder(1).g + remainder(2).g remainder(2).delta
-        // ETC
-        (i: Int) => remainder.slice(0,i+1).map(_.g).reduce(_ + _) +
-                    remainder(i).delta
-      )
-      require(ranges.length == remainder.length)
-      // we need to find the new index so we can increment i anyway.
-      /*
-      val toCompressIndex: List[GKEntry] = remainder.zip(ranges).takeWhile({
-        case (_, r: Int) => r < math.floor(2*epsilon*count)
-      }).map(_._1)
-      */
-      //println(remainder)
-      //println(ranges)
-      // 2 because…
-      // if nothing matches, we're just appending the first element in reemainder
-      // (and incrementing i by 1 so that next time we drop that first element)
-      // if the 0th elment matches,
-      val toCompressIndex: Int = 2 + ranges.lastIndexWhere(
-        (r: Long) => r < threshold
-      )
-      // if toCompressIndex is 1, it means we're just adding the first item
-      // and incrementing i by 1, etc.
-      out.append(combiner(remainder.slice(0, toCompressIndex)))
-      i += toCompressIndex
-    }
+    // while (i < sample.length) {
+    //   // if i = 1 this keeps elements i..N
+    //   // so the first element in remainder is sample(i)
+    //   val remainder: List[GKEntry] = sample.drop(i)
+    //   val ranges: IndexedSeq[Long] = (0 until remainder.length).map(
+    //     // remainder(0).g + remainder(0).delta
+    //     // remainder(0).g + remainder(1).g + remainder(1).delta
+    //     // remainder(0).g + remainder(1).g + remainder(2).g remainder(2).delta
+    //     // ETC
+    //     (i: Int) => remainder.slice(0,i+1).map(_.g).reduce(_ + _) +
+    //                 remainder(i).delta
+    //   )
+    //   require(ranges.length == remainder.length)
+    //   // we need to find the new index so we can increment i anyway.
+    //   // 2 because…
+    //   // if nothing matches, we're just appending the first element in reemainder
+    //   // (and incrementing i by 1 so that next time we drop that first element)
+    //   // if the 0th elment matches,
+    //   val toCompressIndex: Int = 2 + ranges.lastIndexWhere(
+    //     (r: Long) => r < threshold
+    //   )
+    //   // if toCompressIndex is 1, it means we're just adding the first item
+    //   // and incrementing i by 1, etc.
+    //   out.append(combiner(remainder.slice(0, toCompressIndex)))
+    //   i += toCompressIndex
+    // }
     //println(out.toList)
-    println(sample.length)
-    println(out.length)
-    (new GKRecord(epsilon, out.toList, count))
-    """
+    // println(sample.length)
+    // println(out.length)
+
     (new GKRecord(epsilon, out.toList, count))
   }
   def query(quantile: Double): Double = {
