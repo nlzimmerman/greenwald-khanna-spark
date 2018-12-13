@@ -141,6 +141,9 @@ class GKRecord(
     (new GKRecord(epsilon, out.toList, count))
   }
   def compress(): GKRecord = {
+    /*  there should be some documentation here, but it
+        does, in principle, the same thing the previous one does
+    */
     val threshold: Long = math.floor(2*epsilon*count).toLong
     def isCombinable(a: GKEntry, b: GKEntry): Boolean = {
         (a.g + b.g + b.delta) < threshold
@@ -148,8 +151,6 @@ class GKRecord(
     def combine(a: GKEntry, b: GKEntry): GKEntry = {
       GKEntry(b.v, a.g+b.g, b.delta)
     }
-
-
     @tailrec
     def collapse(
       previous: GKEntry,
@@ -179,41 +180,7 @@ class GKRecord(
     } else {
       sample
     }
-    // case class Record(tally: List[GKEntry], previous: Option[GKEntry])
-    //
-    // def updateRecord(r: Record, next: GKEntry): Record = {
-    //   r.previous match {
-    //     // if nothing is carried over from the previous entry,
-    //     // pass this along to the next one. This will only match
-    //     // at the beginning of the list
-    //     case None => {
-    //       Record(r.tally, Some(next))
-    //     }
-    //     // if we can combine the previous entry and the next one,
-    //     // do so and pass it along. If we can't, add the previous
-    //     // to the list and pass the next one along.
-    //     case Some(previous: GKEntry) => {
-    //       if (isCombinable(previous, next)) {
-    //         Record(r.tally, Some(combiner(previous, next)))
-    //       } else {
-    //         // if we can't combine the prevous entry and the next one,
-    //         // append thee previous entry to the tally and pass the next along
-    //         Record(r.tally :+ previous, Some(next))
-    //       }
-    //     }
-    //   }
-    // }
-    // val newRecord: Record = sample.foldLeft(
-    //   Record(List[GKEntry](), None)
-    // )(
-    //   updateRecord
-    // )
-    // val out: List[GKEntry] = newRecord.previous match {
-    //   case None => newRecord.tally
-    //   case Some(f) => newRecord.tally :+ f
-    // }
-
-    (new GKRecord(epsilon, out.toList, count))
+    (new GKRecord(epsilon, out, count))
   }
   def query(quantile: Double): Double = {
     val desiredRank: Long = math.ceil(quantile * (count - 1)).toLong
@@ -238,6 +205,7 @@ class GKRecord(
     if (this.sample.length == 0) that
     else if (that.sample.length == 0) this
     else {
+
       val thisSample: ListBuffer[GKEntry] = sample.to[ListBuffer]
       val thatSample: ListBuffer[GKEntry] = that.sample.to[ListBuffer]
       val out: ListBuffer[GKEntry] = new ListBuffer[GKEntry]
