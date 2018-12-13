@@ -132,6 +132,9 @@ class GKRecord(
     /*  there should be some documentation here, but it
         does, in principle, the same thing the previous one does
     */
+    // TODO: figure out if the changes described on line 65 here
+    // https://github.com/dgryski/go-gk/blob/master/gk.go
+    // are things I need to consider.
     val threshold: Long = math.floor(2*epsilon*count).toLong
     def isCombinable(a: GKEntry, b: GKEntry): Boolean = {
         (a.g + b.g + b.delta) < threshold
