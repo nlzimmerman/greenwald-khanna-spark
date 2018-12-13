@@ -100,9 +100,6 @@ class GKRecord(
         val i: Int = sample.indexWhere(
           (g: GKEntry) => v < g.v
         )
-        if (i < 1) {
-          throw new Exception("i should be greater than 1")
-        }
         val delta: Long = math.floor(2*epsilon*count).toLong
         //sample.insert(i, GKEntry(v, 1, delta))
         listInsert(sample, i, GKEntry(v, 1, delta))
