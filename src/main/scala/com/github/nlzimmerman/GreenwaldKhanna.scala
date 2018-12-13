@@ -1,6 +1,6 @@
 package com.github.nlzimmerman
 
-import collection.mutable.ListBuffer
+
 import scala.annotation.tailrec
 // For now this is a line-for-line rewrite of what I did in Python;
 // Then I'll move it into a class
@@ -120,26 +120,7 @@ class GKRecord(
       newRecord
     }
   }
-  // OBSOLETE
-  def compressOld(): GKRecord = {
-    var i: Int = 1
-    val out: ListBuffer[GKEntry] = sample.to[ListBuffer].clone
-    while (i < out.length-1) {
-      if (
-        (
-          out(i).g + out(i+1).g + out(i+1).delta
-        ) < math.floor(2*epsilon*count)
-      ) {
-        out(i+1) = out(i+1).copy(g=(out(i+1).g+out(i).g))
-        //out(i+1).g += out(i).g
-        out.remove(i)
-      } else {
-        i += 1
-      }
-    }
-    println(out.length)
-    (new GKRecord(epsilon, out.toList, count))
-  }
+
   def compress(): GKRecord = {
     /*  there should be some documentation here, but it
         does, in principle, the same thing the previous one does
@@ -205,39 +186,29 @@ class GKRecord(
     if (this.sample.length == 0) that
     else if (that.sample.length == 0) this
     else {
-
-      val thisSample: ListBuffer[GKEntry] = sample.to[ListBuffer]
-      val thatSample: ListBuffer[GKEntry] = that.sample.to[ListBuffer]
-      val out: ListBuffer[GKEntry] = new ListBuffer[GKEntry]
-      while (thisSample.length > 0 && thatSample.length > 0) {
-        // This could be much, much better.
-        out += {
-          val (thisElement: GKEntry, otherNextElement: GKEntry) = {
-            if (thisSample(0).v < thatSample(0).v) {
-              // I'm not sure if it's safe to not copy this in Spark.
-              // it should be fine in straight Scala.
-              val a: GKEntry = thisSample.remove(0)
-              val b: GKEntry = thatSample.find(
-                (x) => x.v > a.v
-              ).get // will throw an error if there is none. That is correct
-              (a, b)
-            } else {
-              val a: GKEntry = thatSample.remove(0)
-              val b: GKEntry = thisSample.find(
-                (x) => x.v > a.v
-              ).get
-              (a, b)
-            }
+      // exploiting the fact that GKEntries are case classes
+      // so I can use them as keys in a Map
+      // this is a LOT better than that Python version I wrote! (if it works)
+      // we need to keep track of the next entry in the other list
+      // so we can recalculate delta on an entry-by-entry basis.
+      // I include the this's here just so I can keep track of what I'm doing.
+      val otherNext: Map[GKEntry, Option[GKEntry]] =
+        this.sample.map(
+          (x: GKEntry) => (x -> that.sample.find((y) => y.v > x.v))
+        ).toMap ++
+        that.sample.map(
+          (x: GKEntry) => (x -> this.sample.find((y) => y.v > x.v))
+        ).toMap
+      val combined: List[GKEntry] = (sample ::: that.sample).sortBy(_.v)
+      val out: List[GKEntry] = combined.map(
+        (x: GKEntry) => otherNext(x) match {
+          case None => x
+          case Some(otherNext) => {
+            val newDelta: Long = x.delta + otherNext.delta + otherNext.g -1
+            x.copy(delta=newDelta)
           }
-          val newDelta: Long = thisElement.delta +
-            otherNextElement.delta + otherNextElement.g - 1
-          //thisElement.delta = newDelta
-          thisElement.copy(delta=newDelta)
         }
-      } // either thisSample or thatSample has been exhausted now
-      // so this just appends whichever isn't exhausted
-      out ++= thisSample
-      out ++= thatSample
+      )
 
       val newEpsilon: Double = math.max(epsilon, that.epsilon)
       val countIncrease: Long = math.min(count, that.count)
@@ -249,7 +220,7 @@ class GKRecord(
       )
       /* The old test was
       if (countIncrease >= math.floor(1.0/(2.0*newEpsilon)))
-         While I think this may in some sense be wrong, in the sense that it's
+         Which I think is in some sense in that it's
          too conservative about when to compress.
          In principle, we compress every time the count is a multiple of
          1/(2*epsilon) — say, every time the count is a multiple of 50.
