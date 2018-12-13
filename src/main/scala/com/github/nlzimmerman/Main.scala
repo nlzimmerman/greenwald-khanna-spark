@@ -1,10 +1,22 @@
 package com.github.nlzimmerman
 import org.apache.spark.sql.{SparkSession, Dataset}
 import org.apache.spark.rdd.RDD
+import org.apache.spark.api.java.{JavaDoubleRDD, JavaRDD}
 import org.apache.log4j.{Level, Logger}
 import scala.util.Random
 
 case class DemoKeyVal(val key: String, val n: Double) extends Serializable
+
+object Python {
+  def printHello(): Unit = println("Hello World")
+  def returnHello(): String = "Hello World!"
+  def addRDD(x: RDD[Double]): Double = x.reduce(_ + _)
+  //def addRDD(x: JavaDoubleRDD): Double = x.reduce(_ + _)
+  // def addRDD(x: JavaRDD[Double]): Double = x.reduce(
+  //   (a: Double, b: Double) => a+b
+  // )
+  def add(x: Double, y: Double): Double = x + y
+}
 
 object Main extends App {
   Logger.getLogger("org.apache.spark").setLevel(Level.WARN)
@@ -16,6 +28,17 @@ object Main extends App {
     appName("example").
     getOrCreate()
   }
+  val b: Seq[Double] = Seq(11,20,18,5,12,6,3,2).map(_.toDouble)
+  val r: GKRecord = b.foldLeft(new GKRecord(0.1))((x: GKRecord, a: Double) => x.insert(a))
+  println(r.query(0.5))
+  val rand: Random = new Random(2210)
+  val c: Seq[Double] = rand.shuffle((0 until 100).map(_.toDouble).toList)
+  val r1: GKRecord = c.foldLeft(new GKRecord(0.01))((x: GKRecord, a: Double) => x.insert(a))
+  println(r1.query(0.5))
+  println(r1.query(0.1))
+  println(r1.query(0.01))
+  println(r1.query(0.9))
+  println(r1.query(0.99))
   //
   // println(spark.sparkContext.parallelize(Seq(1,2,3)).reduce(_ + _))
   /*  Spark tends to throw errors in local mode when shutting down;
@@ -35,15 +58,15 @@ object Main extends App {
   //val g0: GKRecord = nr.treeAggregate(new GKRecord(0.01))((a: GKRecord, b: Double) => a.insert(b), (a: GKRecord, b: GKRecord) => a.combine(b))
   //println(Seq(0.05, 0.5, 0.95).map((x) => g0.query(x)))
   //d.sample.foreach(println(_))
-  val n: Int = 100
-  val numbers: Seq[Double] = (0 until n).flatMap(
-    (x: Int) => Seq(1,5,2,6,3,7,4,8,0,9).map((z: Int) => (z+10*x).toDouble)
-  ) :+ (n*10).toDouble
-  println(numbers.length)
-  println(DirectQuantile.getQuantiles(numbers, Seq(0.05, 0.5, 0.95)))
-  println(GKQuantile.getQuantiles(numbers, Seq(0.05, 0.5, 0.95)))
-  val gk: GKRecord = numbers.foldLeft(new GKRecord(0.01))((g, i) => g.insert(i))
-  println(gk.sample)
+  // val n: Int = 100
+  // val numbers: Seq[Double] = (0 until n).flatMap(
+  //   (x: Int) => Seq(1,5,2,6,3,7,4,8,0,9).map((z: Int) => (z+10*x).toDouble)
+  // ) :+ (n*10).toDouble
+  // println(numbers.length)
+  // println(DirectQuantile.getQuantiles(numbers, Seq(0.05, 0.5, 0.95)))
+  // println(GKQuantile.getQuantiles(numbers, Seq(0.05, 0.5, 0.95)))
+  // val gk: GKRecord = numbers.foldLeft(new GKRecord(0.01))((g, i) => g.insert(i))
+  // println(gk.sample)
   Logger.getLogger("org.apache.spark").setLevel(Level.OFF)
   Logger.getLogger("akka").setLevel(Level.OFF)
 }

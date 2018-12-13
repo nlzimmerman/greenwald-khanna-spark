@@ -17,7 +17,7 @@ lazy val root = (project in file(".")).
   settings(
     inThisBuild(List(
       organization := "org.github.nlzimmerman",
-      scalaVersion := "2.12.7",
+      scalaVersion := "2.11.12",
       version      := "0.0.1",
     )),
     name := "greenwald-khanna udaf",

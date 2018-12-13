@@ -40,7 +40,13 @@ def insert_gk(d, v):
         # we're starting at 1 because we already checked element 0 up above
         for i in range(1,sample_length):
             if v < sample[i][0]:
-                delta = floor(2*epsilon*d['count'])
+                # WHOA
+                # http://www.mathcs.emory.edu/~cheung/Courses/584-StreamDB/Syllabus/08-Quantile/Greenwald.html
+                # https://www.stevenengelhardt.com/2018/03/07/calculating-percentiles-on-streaming-data-part-2-notes-on-implementing-greenwald-khanna/#GK01
+                if d['count'] < 1.0/(2.0*epsilon):
+                    delta = 0
+                else:
+                    delta = sample[i][1] + sample[i][2] -1
                 sample.insert(i, [v, 1, delta])
                 added = True
                 break
@@ -48,6 +54,7 @@ def insert_gk(d, v):
         # then it's larger than all of them. In this case delta is 0 again
         if not added:
             sample.insert(sample_length, [v, 1, 0])
+    print(sample)
     # we've now added one element somewhere.
     # increment the count, see if it's time to compress, and return the dict
     d['count'] += 1
@@ -155,25 +162,30 @@ def combine_gk(g0, g1):
 
 
 if __name__ == "__main__":
-    r = Random()
-    r.seed(2210)
-    numbers = list()
-    n = 100
-    for i in range(n):
-        numbers.extend(
-            [
-                10*i+x for x in
-                    [1,5,2,6,3,7,4,8,0,9]
-            ]
-        )
-    numbers.append(n*10)
-
-    import numpy as np
-    print(np.quantile(numbers, [0.05, 0.5, 0.95]))
-    print(np.quantile(numbers, [0.04, 0.49, 0.94]))
-    d = new_gk_dict(0.01)
-    for n in numbers:
+    d = new_gk_dict(0.1)
+    for n in [ 11,20,18,5,12,6,3,2]:
         insert_gk(d, n)
-    print([query_gk(d, x) for x in [0.05, 0.5, 0.95]])
-    print(d['sample'])
-    print(len(d['sample']))
+    print(query_gk(d, 0.5))
+    #print(d['sample'])
+    # r = Random()
+    # r.seed(2210)
+    # numbers = list()
+    # n = 100
+    # for i in range(n):
+    #     numbers.extend(
+    #         [
+    #             10*i+x for x in
+    #                 [1,5,2,6,3,7,4,8,0,9]
+    #         ]
+    #     )
+    # numbers.append(n*10)
+    #
+    # import numpy as np
+    # print(np.quantile(numbers, [0.05, 0.5, 0.95]))
+    # print(np.quantile(numbers, [0.04, 0.49, 0.94]))
+    # d = new_gk_dict(0.01)
+    # for n in numbers:
+    #     insert_gk(d, n)
+    # print([query_gk(d, x) for x in [0.05, 0.5, 0.95]])
+    # print(d['sample'])
+    # print(len(d['sample']))

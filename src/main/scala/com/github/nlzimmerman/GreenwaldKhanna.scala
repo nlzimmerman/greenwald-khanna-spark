@@ -77,7 +77,7 @@ case class GKEntry(
 class GKRecord(
   val epsilon: Double,
   val sample: List[GKEntry] = List[GKEntry](),
-  val count: Long = 0,
+  val count: Long = 0
 ) extends Serializable {
   val compressThreshold: Long = (1.0/(2.0*epsilon)).toLong
 
@@ -100,7 +100,17 @@ class GKRecord(
         val i: Int = sample.indexWhere(
           (g: GKEntry) => v < g.v
         )
-        val delta: Long = math.floor(2*epsilon*count).toLong
+        val delta: Long = if (count < compressThreshold) {
+          0L
+          //math.max(math.floor(2*epsilon*count).toLong - 1, 0L)
+        } else {
+          //math.floor(2*epsilon*count).toLong
+          val a = math.max(math.floor(2*epsilon*count).toLong - 1L, 0L)
+          val b = sample(i).g + sample(i).delta - 1
+          if (b > a) println(s"$a $b")
+          //sample(i).g + sample(i).delta - 1
+          a
+        }
         //sample.insert(i, GKEntry(v, 1, delta))
         listInsert(sample, i, GKEntry(v, 1, delta))
       }
@@ -134,6 +144,7 @@ class GKRecord(
       previous: GKEntry,
       remainder: List[GKEntry],
       acc: List[GKEntry] = Nil,
+      carryOver: Long = 0
     ): List[GKEntry] = {
       if (remainder.isEmpty) {
         acc :+ previous
@@ -153,15 +164,24 @@ class GKRecord(
         )
       }
     }
-    val out: List[GKEntry] = if (sample.length > 0) {
-      collapse(sample.head, sample.tail)
+    // never remove the first element
+    val out: List[GKEntry] = if (sample.length > 1) {
+      sample.head +: collapse(sample.tail.head, sample.tail.tail)
     } else {
       sample
     }
     (new GKRecord(epsilon, out, count))
   }
   def query(quantile: Double): Double = {
-    val desiredRank: Long = math.ceil(quantile * (count - 1)).toLong
+    /*  Ranks run from 1 to count and NOT from 0 to count-1
+        An alternative construction of desiredRank would be
+        ceil(quantile*count)
+        This has the advantage of rounding a desiredRank of 7.2 to 7 and not 8,
+        But it has the disadvantage of rounding 0.4 to 0, hence the math.max
+        bit. For any reasonably-large data set sampled at any normal resolution,
+        these should really do the exact same thing.
+    */
+    val desiredRank: Long = math.max(math.round(quantile * (count)).toLong, 1L)
     val rankEpsilon: Double = epsilon * count
     // the tail is to drop the leading 0 added by scanLeft
     // scanLeft takes the cumulative sum (at least it does
@@ -172,10 +192,12 @@ class GKRecord(
     })
     val idx: Int = startingRanks.zip(endingRanks).indexWhere({
       case (startingRank: Long, endingRank: Long) => (
-        (desiredRank-startingRank) <= rankEpsilon &&
-        (endingRank-desiredRank) <= rankEpsilon
+        (desiredRank-startingRank) < rankEpsilon &&
+        (endingRank-desiredRank) < rankEpsilon
       )
     })
+    // if nothing matches, we have a problem.
+    require(idx >= 0)
     sample(idx).v
   }
 

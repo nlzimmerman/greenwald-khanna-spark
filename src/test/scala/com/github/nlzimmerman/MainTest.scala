@@ -1,6 +1,6 @@
 package com.github.nlzimmerman
 
-import org.scalatest.WordSpec
+import org.scalatest.{WordSpec, Ignore}
 
 object TestParams {
   val targets: Seq[Double] = Seq(
@@ -76,11 +76,28 @@ object NormalNumbers {
 class MainSuite extends WordSpec {
 
   "DirectQuantile" should {
+    "behave reasonably for a small list of numbers" in {
+      import scala.util.Random
+      /*  this is just the 100 numbers from 0 to 99, inclusive.
+          so, I'm reasoning, the 1st percentile should be 0,
+          the 100th percentile should be 99,
+          the 50th percentile should be 49.
+          right?
+      */
+      val n: Seq[Double] = (0 until 100).map(_.toDouble).toList
+      val rand: Random = new Random(2200)
+      val nShuffle: Seq[Double] = rand.shuffle(n)
+      DirectQuantile.getQuantiles(n, Seq(0.1, 0.15, 0.61, 0.99)).zip(
+        Seq[Double](9.0, 14.0, 60.0, 98.0)
+      ).foreach({
+        case(a: Double, b: Double) => assert(a==b)
+      })
+    }
     "be able to invert the exact normal distribution" in {
       import Util._
       import NormalNumbers._
       import TestParams._
-      val bounds: Seq[(Double, Double)] = inverseNormalCDFBounds(targets, 1.toDouble/500000)
+      val bounds: Seq[(Double, Double)] = inverseNormalCDFBounds(targets, 2.toDouble/500000)
       val m: Seq[Double] = DirectQuantile.getQuantiles(exactNumbers, targets)
       // val n: Seq[Double] = DirectQuantile.getQuantiles(numbers2, targets)
       boundsCheck(m, bounds)
@@ -88,6 +105,32 @@ class MainSuite extends WordSpec {
     }
   }
   "GKQuantile" should {
+    "behave reasonably for a very small list of numbers" in {
+      // this is the bug we need to not fall victim to
+      // https://www.stevenengelhardt.com/2018/03/07/calculating-percentiles-on-streaming-data-part-2-notes-on-implementing-greenwald-khanna/#GK01
+      val b: Seq[Double] = Seq(11,20,18,5,12,6,3,2).map(_.toDouble)
+      val r: GKRecord = b.foldLeft(new GKRecord(0.1))((x: GKRecord, a: Double) => x.insert(a))
+      // val r2: GKRecord = b.foldLeft(new GKRecord(0.01))((x: GKRecord, a: Double) => x.insert(a))
+      // needs to return something with rank between 0.4*8=3.2 and 0.6*8=4.8
+      // 4 is the only integer in that range so 6.0 is the only thing that can match.
+      assert(r.query(0.5)==6.0)
+      assert(r.query(0.00001)==2.0)
+      // needs to return something with rank between 6.4 and 8.0
+      assert(r.query(0.9)==18.0 || r.query(0.9)==20.0)
+    }
+    "behave reasonably for a fairly small list of numbers" in {
+      import scala.util.Random
+      val n: Seq[Double] = (0 until 100).map(_.toDouble).toList
+      val rand: Random = new Random(2200)
+      val nShuffle: Seq[Double] = rand.shuffle(n)
+      val q: Seq[Double] = GKQuantile.getQuantiles(nShuffle, Seq(0.0, 0.1, 0.15, 0.61, 0.99, 1.0), 0.05)
+
+      val bounds: Seq[(Double, Double)] = Seq(
+        (-1.0, 5.0), (5.0, 15.0), (10.0, 20.0), (56.0, 66.0), (94.0, 101.0), (94.0, 101.0)
+      )
+      Util.boundsCheck(q, bounds)
+    }
+
     "be able to invert the normal distribution" when {
       import Util._
       import NormalNumbers._
