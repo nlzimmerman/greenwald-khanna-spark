@@ -84,6 +84,9 @@ class GKRecord(
   def listInsert[T](l: List[T], i: Int, a: T): List[T] = {
     (l.dropRight(l.length-i) :+ a) ::: l.drop(i)
   }
+  def listReplace[T](l: List[T], i: Int, a: T): List[T] = {
+    (l.dropRight(l.length-i) :+ a) ::: l.drop(i+1)
+  }
   def insert(v: Double): GKRecord = {
     val newSample: List[GKEntry] = {
       if (
@@ -106,8 +109,8 @@ class GKRecord(
         } else {
           //math.floor(2*epsilon*count).toLong
           val a = math.max(math.floor(2*epsilon*count).toLong - 1L, 0L)
-          val b = sample(i).g + sample(i).delta - 1
-          if (b > a) println(s"$a $b")
+          //val b = sample(i).g + sample(i).delta - 1
+          //if (b > a) println(s"$a $b")
           //sample(i).g + sample(i).delta - 1
           a
         }
@@ -139,8 +142,15 @@ class GKRecord(
     def isCombinable(a: GKEntry, b: GKEntry): Boolean = {
         (a.g + b.g + b.delta) < threshold
     }
-    def combine(a: GKEntry, b: GKEntry): GKEntry = {
-      GKEntry(b.v, a.g+b.g, b.delta)
+    def combine(a: GKEntry, b: GKEntry, carryOver: Long): GKEntry = {
+      GKEntry(b.v, a.g+b.g+carryOver, b.delta)
+    }
+    def isEqual(a: GKEntry, b: GKEntry): Boolean = a.v == b.v
+    def combineEquals(a: GKEntry, b: GKEntry): GKEntry = {
+      GKEntry(a.v, a.g, b.delta+b.g)
+    }
+    def addCarryOver(a: GKEntry, c: Long): GKEntry = {
+      a.copy(g=(a.g+c))
     }
     @tailrec
     def collapse(
@@ -151,11 +161,28 @@ class GKRecord(
     ): List[GKEntry] = {
       if (remainder.isEmpty) {
         acc :+ previous
+      } else if (isEqual(previous, remainder.head)) {
+        collapse(
+          combineEquals(previous, remainder.head),
+          remainder.tail,
+          acc,
+          carryOver + remainder.head.g
+        )
       } else if (isCombinable(previous, remainder.head)) {
         collapse(
-          combine(previous, remainder.head),
+          combine(previous, remainder.head, carryOver),
           remainder.tail,
-          acc
+          acc,
+          0L
+        )
+      // doing it this way so that I don't make any new objects in the (usual)
+      // case where carryOver is zero
+      } else if (carryOver != 0) {
+        collapse(
+          remainder.head,
+          remainder.tail,
+          acc :+ addCarryOver(previous, carryOver),
+          0L
         )
       } else {
         // not combinable so append previous acc and
@@ -163,7 +190,8 @@ class GKRecord(
         collapse(
           remainder.head,
           remainder.tail,
-          acc :+ previous
+          acc :+ previous,
+          0L
         )
       }
     }
