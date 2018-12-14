@@ -50,10 +50,12 @@ object Util {
       (i) => (lookup(i), lookup(i+1))
     )
   }
-  def boundsCheck(n: Seq[Double], b: Seq[(Double, Double)]): Unit = {
+  def boundsCheck[T](n: Seq[T], b: Seq[(T, T)])
+      (implicit num: Numeric[T]): Unit = {
+    import num._
     assert(n.length == b.length)
     n.zip(b).foreach(
-      (x: (Double, (Double, Double))) => assert(
+      (x: (T, (T, T))) => assert(
         (x._2._1 <= x._1) &&
         (x._1 <= x._2._2)
       )
@@ -82,7 +84,7 @@ object NormalNumbers {
 class MainSuite extends WordSpec {
 
   "DirectQuantile" should {
-    "behave reasonably for a small list of numbers" in {
+    "behave reasonably for a small list of ints" in {
       import scala.util.Random
       /*  this is just the 100 numbers from 0 to 99, inclusive.
           so, I'm reasoning, the 1st percentile should be 0,
@@ -90,13 +92,13 @@ class MainSuite extends WordSpec {
           the 50th percentile should be 49.
           right?
       */
-      val n: Seq[Double] = (0 until 100).map(_.toDouble).toList
+      val n: Seq[Int] = (0 until 100)/*.map(_.toDouble)*/.toList
       val rand: Random = new Random(2200)
-      val nShuffle: Seq[Double] = rand.shuffle(n)
+      val nShuffle: Seq[Int] = rand.shuffle(n)
       DirectQuantile.getQuantiles(n, Seq(0.1, 0.15, 0.61, 0.99)).zip(
-        Seq[Double](9.0, 14.0, 60.0, 98.0)
+        Seq[Int](9, 14, 60, 98)
       ).foreach({
-        case(a: Double, b: Double) => assert(a==b)
+        case(a: Int, b: Int) => assert(a==b)
       })
     }
     "be able to invert the exact normal distribution" in {
@@ -111,28 +113,28 @@ class MainSuite extends WordSpec {
     }
   }
   "GKQuantile" should {
-    "behave reasonably for a very small list of numbers" in {
+    "behave reasonably for a very small list of Ints" in {
       // this is the bug we need to not fall victim to
       // https://www.stevenengelhardt.com/2018/03/07/calculating-percentiles-on-streaming-data-part-2-notes-on-implementing-greenwald-khanna/#GK01
-      val b: Seq[Double] = Seq(11,20,18,5,12,6,3,2).map(_.toDouble)
-      val r: GKRecord[Double] = b.foldLeft(new GKRecord[Double](0.1))((x: GKRecord[Double], a: Double) => x.insert(a))
+      val b: Seq[Int] = Seq(11,20,18,5,12,6,3,2)
+      val r: GKRecord[Int] = b.foldLeft(new GKRecord[Int](0.1))((x: GKRecord[Int], a: Int) => x.insert(a))
       // val r2: GKRecord = b.foldLeft(new GKRecord(0.01))((x: GKRecord, a: Double) => x.insert(a))
       // needs to return something with rank between 0.4*8=3.2 and 0.6*8=4.8
       // 4 is the only integer in that range so 6.0 is the only thing that can match.
-      assert(r.query(0.5)==6.0)
-      assert(r.query(0.00001)==2.0)
+      assert(r.query(0.5)==6)
+      assert(r.query(0.00001)==2)
       // needs to return something with rank between 6.4 and 8.0
-      assert(r.query(0.9)==18.0 || r.query(0.9)==20.0)
+      assert(r.query(0.9)==18 || r.query(0.9)==20)
     }
-    "behave reasonably for a fairly small list of numbers" in {
+    "behave reasonably for a fairly small list of Ints" in {
       import scala.util.Random
-      val n: Seq[Double] = (0 until 100).map(_.toDouble).toList
+      val n: Seq[Int] = (0 until 100).toList
       val rand: Random = new Random(2200)
-      val nShuffle: Seq[Double] = rand.shuffle(n)
-      val q: Seq[Double] = GKQuantile.getQuantiles(nShuffle, Seq(0.0, 0.1, 0.15, 0.61, 0.99, 1.0), 0.05)
+      val nShuffle: Seq[Int] = rand.shuffle(n)
+      val q: Seq[Int] = GKQuantile.getQuantiles(nShuffle, Seq(0.0, 0.1, 0.15, 0.61, 0.99, 1.0), 0.05)
 
-      val bounds: Seq[(Double, Double)] = Seq(
-        (-1.0, 5.0), (5.0, 15.0), (10.0, 20.0), (56.0, 66.0), (94.0, 101.0), (94.0, 101.0)
+      val bounds: Seq[(Int, Int)] = Seq(
+        (-1, 5), (5, 15), (10, 20), (56, 66), (94, 101), (94, 101)
       )
       Util.boundsCheck(q, bounds)
     }

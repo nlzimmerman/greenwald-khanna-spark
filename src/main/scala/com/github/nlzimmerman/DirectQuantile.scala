@@ -1,8 +1,10 @@
 package com.github.nlzimmerman
 
 object DirectQuantile {
-  def getQuantiles(x: Seq[Double], quantiles: Seq[Double]): Seq[Double] = {
-    val s: Seq[Double] = x.sorted
+  def getQuantiles[T](x: Seq[T], quantiles: Seq[Double])
+      (implicit num: Numeric[T]): Seq[T] = {
+    import num._
+    val s: Seq[T] = x.sorted
     val l: Long = s.length
     val targetRanks: Seq[Int] = quantiles.map(
       // math.ceil((seq.length - 1) * (p / 100.0)).toInt
