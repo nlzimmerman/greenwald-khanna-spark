@@ -12,83 +12,91 @@ object GKQuantile {
   // oof
   // https://stackoverflow.com/questions/16921168/scala-generic-method-no-classtag-available-for-t
   import scala.reflect.ClassTag
-  def getQuantiles(
-    x: Seq[Double],
+  def getQuantiles[T](
+    x: Seq[T],
     quantiles: Seq[Double],
     epsilon: Double=0.01
-  ): Seq[Double] = {
-    val d: GKRecord = x.foldLeft(new GKRecord(epsilon))(
-      (x: GKRecord, y: Double) => x.insert(y)
+  )(implicit num: Numeric[T]): Seq[T] = {
+    import num._
+    val d: GKRecord[T] = x.foldLeft(new GKRecord[T](epsilon))(
+      (x: GKRecord[T], y: T) => x.insert(y)
     )
     quantiles.map((q: Double) => d.query(q))
   }
 
-  def getQuantiles(
-    x: RDD[Double],
+  def getQuantiles[T](
+    x: RDD[T],
     quantiles: Seq[Double],
     epsilon: Double
-  ): Seq[Double] = {
-    val d: GKRecord = x.treeAggregate(
-      new GKRecord(epsilon)
+  )(implicit num: Numeric[T]): Seq[T] = {
+    import num._
+    val d: GKRecord[T] = x.treeAggregate(
+      new GKRecord[T](epsilon)
     )(
-      (a: GKRecord, b: Double) => a.insert(b),
-      (a: GKRecord, b: GKRecord) => a.combine(b)
+      (a: GKRecord[T], b: T) => a.insert(b),
+      (a: GKRecord[T], b: GKRecord[T]) => a.combine(b)
     )
     quantiles.map((q: Double) => d.query(q))
   }
 
-  def getGroupedQuantiles[T: ClassTag](
-    r: RDD[(T, Double)],
+  def getGroupedQuantiles[U:ClassTag, T: ClassTag](
+    r: RDD[(U, T)],
     quantiles: Seq[Double],
     epsilon: Double = 0.01
-  ): PairRDDFunctions[(T, Double), Double] = {
-    val p: PairRDDFunctions[T, Double] = new PairRDDFunctions[T, Double](r)
+  )(implicit num: Numeric[T]): PairRDDFunctions[(U, Double), T] = {
+    import num._
+    val p: PairRDDFunctions[U, T] = new PairRDDFunctions[U, T](r)
 
-    val aggregated: PairRDDFunctions[T, GKRecord] = p.aggregateByKey[GKRecord](
-      new GKRecord(epsilon)
+    val aggregated: PairRDDFunctions[U, GKRecord[T]] = p.aggregateByKey[GKRecord[T]](
+      new GKRecord[T](epsilon)
     )(
-      (g: GKRecord, v: Double) => {
+      (g: GKRecord[T], v: T) => {
         g.insert(v)
-      }: GKRecord,
-      (a: GKRecord, b: GKRecord) => { a.combine(b) }: GKRecord
+      }: GKRecord[T],
+      (a: GKRecord[T], b: GKRecord[T]) => { a.combine(b) }: GKRecord[T]
     )
+    //val staged: RDD[((U, Double), T)] =
     aggregated.flatMapValues(
-      (a: GKRecord) => {
+      (a: GKRecord[T]) => {
         quantiles.map(
           (q: Double) => (q, a.query(q))
         )
-      }: Seq[(Double, Double)]
+      }: Seq[(Double, T)]
     ).map(
       // shifts from (key, (quantile, value)) to
       // ((key, quantile), value)
-      (x: (T, (Double, Double))) => ((x._1, x._2._1), x._2._2)
+      (x: (U, (Double, T))) => ((x._1, x._2._1), x._2._2)
     )
+    //new PairRDDFunctions[(U, Double), T](staged)
   }
 }
 
 // beware — the right basis for comparison is usually just going to be on v
 // but I think it's still fine to make this a case class
-case class GKEntry(
-  val v: Double,
+case class GKEntry[T](
+  val v: T,
   val g: Long,
   val delta: Long
-)
+)(implicit num: Numeric[T]) {
+  import num._
+}
 
-class GKRecord(
+class GKRecord[T](
   val epsilon: Double,
-  val sample: List[GKEntry] = List[GKEntry](),
+  val sample: List[GKEntry[T]] = List[GKEntry[T]](),
   val count: Long = 0
-) extends Serializable {
+)(implicit num: Numeric[T]) extends Serializable {
+  import num._
   val compressThreshold: Long = (1.0/(2.0*epsilon)).toLong
 
-  def listInsert[T](l: List[T], i: Int, a: T): List[T] = {
+  def listInsert[U](l: List[U], i: Int, a: U): List[U] = {
     (l.dropRight(l.length-i) :+ a) ::: l.drop(i)
   }
-  def listReplace[T](l: List[T], i: Int, a: T): List[T] = {
+  def listReplace[U](l: List[U], i: Int, a: U): List[U] = {
     (l.dropRight(l.length-i) :+ a) ::: l.drop(i+1)
   }
-  def insert(v: Double): GKRecord = {
-    val newSample: List[GKEntry] = {
+  def insert(v: T): GKRecord[T] = {
+    val newSample: List[GKEntry[T]] = {
       if (
         (sample.length == 0) ||
         (v < sample.head.v)
@@ -101,7 +109,7 @@ class GKRecord(
         sample :+ GKEntry(v,1,0)
       } else {
         val i: Int = sample.indexWhere(
-          (g: GKEntry) => v < g.v
+          (g: GKEntry[T]) => v < g.v
         )
         val delta: Long = if (count < compressThreshold) {
           0L
@@ -115,11 +123,11 @@ class GKRecord(
           a
         }
         //sample.insert(i, GKEntry(v, 1, delta))
-        listInsert(sample, i, GKEntry(v, 1, delta))
+        listInsert(sample, i, GKEntry[T](v, 1, delta))
       }
     }
 
-    val newRecord: GKRecord = new GKRecord(
+    val newRecord: GKRecord[T] = new GKRecord[T](
       epsilon,
       newSample,
       count + 1
@@ -131,7 +139,7 @@ class GKRecord(
     }
   }
 
-  def compress(): GKRecord = {
+  def compress(): GKRecord[T] = {
     /*  there should be some documentation here, but it
         does, in principle, the same thing the previous one does
     */
@@ -139,26 +147,26 @@ class GKRecord(
     // https://github.com/dgryski/go-gk/blob/master/gk.go
     // are things I need to consider.
     val threshold: Long = math.floor(2*epsilon*count).toLong
-    def isCombinable(a: GKEntry, b: GKEntry): Boolean = {
+    def isCombinable(a: GKEntry[T], b: GKEntry[T]): Boolean = {
         (a.g + b.g + b.delta) < threshold
     }
-    def combine(a: GKEntry, b: GKEntry, carryOver: Long): GKEntry = {
+    def combine(a: GKEntry[T], b: GKEntry[T], carryOver: Long): GKEntry[T] = {
       GKEntry(b.v, a.g+b.g+carryOver, b.delta)
     }
-    def isEqual(a: GKEntry, b: GKEntry): Boolean = a.v == b.v
-    def combineEquals(a: GKEntry, b: GKEntry): GKEntry = {
+    def isEqual(a: GKEntry[T], b: GKEntry[T]): Boolean = a.v == b.v
+    def combineEquals(a: GKEntry[T], b: GKEntry[T]): GKEntry[T] = {
       GKEntry(a.v, a.g, b.delta+b.g)
     }
-    def addCarryOver(a: GKEntry, c: Long): GKEntry = {
+    def addCarryOver(a: GKEntry[T], c: Long): GKEntry[T] = {
       a.copy(g=(a.g+c))
     }
     @tailrec
     def collapse(
-      previous: GKEntry,
-      remainder: List[GKEntry],
-      acc: List[GKEntry] = Nil,
+      previous: GKEntry[T],
+      remainder: List[GKEntry[T]],
+      acc: List[GKEntry[T]] = Nil,
       carryOver: Long = 0
-    ): List[GKEntry] = {
+    ): List[GKEntry[T]] = {
       if (remainder.isEmpty) {
         acc :+ previous
       } else if (isEqual(previous, remainder.head)) {
@@ -196,14 +204,14 @@ class GKRecord(
       }
     }
     // never remove the first element
-    val out: List[GKEntry] = if (sample.length > 1) {
+    val out: List[GKEntry[T]] = if (sample.length > 1) {
       sample.head +: collapse(sample.tail.head, sample.tail.tail)
     } else {
       sample
     }
-    (new GKRecord(epsilon, out, count))
+    (new GKRecord[T](epsilon, out, count))
   }
-  def query(quantile: Double): Double = {
+  def query(quantile: Double): T = {
     /*  Ranks run from 1 to count and NOT from 0 to count-1
         An alternative construction of desiredRank would be
         ceil(quantile*count)
@@ -219,7 +227,7 @@ class GKRecord(
     // does when the combine op is addition :)
     val startingRanks: Seq[Long] = sample.map(_.g).scanLeft(0L)(_ + _).tail
     val endingRanks: Seq[Long] = startingRanks.zip(sample).map({
-      case (a: Long, b: GKEntry) => a+b.delta
+      case (a: Long, b: GKEntry[T]) => a+b.delta
     })
     val idx: Int = startingRanks.zip(endingRanks).indexWhere({
       case (startingRank: Long, endingRank: Long) => (
@@ -232,7 +240,7 @@ class GKRecord(
     sample(idx).v
   }
 
-  def combine(that: GKRecord): GKRecord = {
+  def combine(that: GKRecord[T]): GKRecord[T] = {
     if (this.sample.length == 0) that
     else if (that.sample.length == 0) this
     else {
@@ -242,16 +250,16 @@ class GKRecord(
       // we need to keep track of the next entry in the other list
       // so we can recalculate delta on an entry-by-entry basis.
       // I include the this's here just so I can keep track of what I'm doing.
-      val otherNext: Map[GKEntry, Option[GKEntry]] =
+      val otherNext: Map[GKEntry[T], Option[GKEntry[T]]] =
         this.sample.map(
-          (x: GKEntry) => (x -> that.sample.find((y) => y.v > x.v))
+          (x: GKEntry[T]) => (x -> that.sample.find((y) => y.v > x.v))
         ).toMap ++
         that.sample.map(
-          (x: GKEntry) => (x -> this.sample.find((y) => y.v > x.v))
+          (x: GKEntry[T]) => (x -> this.sample.find((y) => y.v > x.v))
         ).toMap
-      val combined: List[GKEntry] = (sample ::: that.sample).sortBy(_.v)
-      val out: List[GKEntry] = combined.map(
-        (x: GKEntry) => otherNext(x) match {
+      val combined: List[GKEntry[T]] = (sample ::: that.sample).sortBy(_.v)
+      val out: List[GKEntry[T]] = combined.map(
+        (x: GKEntry[T]) => otherNext(x) match {
           case None => x
           case Some(otherNext) => {
             val newDelta: Long = x.delta + otherNext.delta + otherNext.g -1
@@ -263,7 +271,7 @@ class GKRecord(
       val newEpsilon: Double = math.max(epsilon, that.epsilon)
       val countIncrease: Long = math.min(count, that.count)
       val newCount: Long = count + that.count
-      val toReturn: GKRecord = new GKRecord(
+      val toReturn: GKRecord[T] = new GKRecord[T](
         newEpsilon,
         out.toList,
         newCount

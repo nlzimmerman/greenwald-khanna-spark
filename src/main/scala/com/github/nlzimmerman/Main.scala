@@ -29,11 +29,11 @@ object Main extends App {
     getOrCreate()
   }
   val b: Seq[Double] = Seq(11,20,18,5,12,6,3,2).map(_.toDouble)
-  val r: GKRecord = b.foldLeft(new GKRecord(0.1))((x: GKRecord, a: Double) => x.insert(a))
+  val r: GKRecord[Double] = b.foldLeft(new GKRecord[Double](0.1))((x: GKRecord[Double], a: Double) => x.insert(a))
   println(r.query(0.5))
   val rand: Random = new Random(2210)
   val c: Seq[Double] = rand.shuffle((0 until 100).map(_.toDouble).toList)
-  val r1: GKRecord = c.foldLeft(new GKRecord(0.01))((x: GKRecord, a: Double) => x.insert(a))
+  val r1: GKRecord[Double] = c.foldLeft(new GKRecord[Double](0.01))((x: GKRecord[Double], a: Double) => x.insert(a))
   println(r1.query(0.5))
   println(r1.query(0.1))
   println(r1.query(0.01))

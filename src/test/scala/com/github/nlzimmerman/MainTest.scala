@@ -12,6 +12,12 @@ object TestParams {
   )
 }
 
+class Counter[T](val x: Seq[T])(implicit num: Numeric[T]) {
+  import num._
+  def count: Long = x.length.toLong
+  def sum: T = x.reduce(_ + _)
+}
+
 object Util {
   import org.apache.spark.sql.SparkSession
   lazy val spark: SparkSession = {
@@ -109,7 +115,7 @@ class MainSuite extends WordSpec {
       // this is the bug we need to not fall victim to
       // https://www.stevenengelhardt.com/2018/03/07/calculating-percentiles-on-streaming-data-part-2-notes-on-implementing-greenwald-khanna/#GK01
       val b: Seq[Double] = Seq(11,20,18,5,12,6,3,2).map(_.toDouble)
-      val r: GKRecord = b.foldLeft(new GKRecord(0.1))((x: GKRecord, a: Double) => x.insert(a))
+      val r: GKRecord[Double] = b.foldLeft(new GKRecord[Double](0.1))((x: GKRecord[Double], a: Double) => x.insert(a))
       // val r2: GKRecord = b.foldLeft(new GKRecord(0.01))((x: GKRecord, a: Double) => x.insert(a))
       // needs to return something with rank between 0.4*8=3.2 and 0.6*8=4.8
       // 4 is the only integer in that range so 6.0 is the only thing that can match.
