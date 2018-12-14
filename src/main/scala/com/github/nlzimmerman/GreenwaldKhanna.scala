@@ -153,6 +153,7 @@ class GKRecord[T](
     def combine(a: GKEntry[T], b: GKEntry[T], carryOver: Long): GKEntry[T] = {
       GKEntry(b.v, a.g+b.g+carryOver, b.delta)
     }
+    // isEqual and combineEquals is not meaningfully unit-tested!!
     def isEqual(a: GKEntry[T], b: GKEntry[T]): Boolean = a.v == b.v
     def combineEquals(a: GKEntry[T], b: GKEntry[T]): GKEntry[T] = {
       GKEntry(a.v, a.g, b.delta+b.g)
@@ -160,6 +161,9 @@ class GKRecord[T](
     def addCarryOver(a: GKEntry[T], c: Long): GKEntry[T] = {
       a.copy(g=(a.g+c))
     }
+    // remember that tailrec just exists to get a compiler error if the
+    // function isn't tail-recursive. The compiler will find and optimize
+    // tail-recursive functions with or without this annotation. 
     @tailrec
     def collapse(
       previous: GKEntry[T],
@@ -169,6 +173,7 @@ class GKRecord[T](
     ): List[GKEntry[T]] = {
       if (remainder.isEmpty) {
         acc :+ previous
+        // isEqual and combineEquals is not meaningfully unit-tested!!
       } else if (isEqual(previous, remainder.head)) {
         collapse(
           combineEquals(previous, remainder.head),
