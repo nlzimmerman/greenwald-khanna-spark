@@ -126,6 +126,57 @@ class MainSuite extends WordSpec {
       // needs to return something with rank between 6.4 and 8.0
       assert(r.query(0.9)==18 || r.query(0.9)==20)
     }
+    "be able to combine equal values" when {
+      "they are in the middle of the list" in {
+        val b: Seq[Int] = Seq(1,2,3,2)
+        val r: GKRecord[Int] = b.foldLeft(new GKRecord[Int](0.1))((x: GKRecord[Int], a: Int) => x.insert(a))
+        assert(r.sample==Seq(
+          GKEntry(1,1,0),
+          GKEntry(2,1,0),
+          GKEntry(2,1,0),
+          GKEntry(3,1,0)
+        ))
+        assert(r.compress.sample==Seq(
+          GKEntry(1,1,0),
+          GKEntry(2,1,1),
+          GKEntry(3,2,0)
+        ))
+      }
+      "they are at the beginning of the list" in {
+        val b: Seq[Int] = Seq(1,2,3,1)
+        val r: GKRecord[Int] = b.foldLeft(new GKRecord[Int](0.1))((x: GKRecord[Int], a: Int) => x.insert(a))
+        assert(r.sample==Seq(
+          GKEntry(1,1,0),
+          GKEntry(1,1,0),
+          GKEntry(2,1,0),
+          GKEntry(3,1,0)
+        ))
+        assert(r.compress.sample==Seq(
+          GKEntry(1,1,1),
+          GKEntry(2,2,0),
+          GKEntry(3,1,0)
+        ))
+      }
+      "they are at the end of the list" in {
+        val b: Seq[Int] = Seq(3,1,2,3)
+        val r: GKRecord[Int] = b.foldLeft(new GKRecord[Int](0.1))(
+          (x: GKRecord[Int], a: Int) => {
+            x.insert(a)
+          }
+        )
+        assert(r.sample==Seq(
+          GKEntry(1,1,0),
+          GKEntry(2,1,0),
+          GKEntry(3,1,0),
+          GKEntry(3,1,0)
+        ))
+        assert(r.compress.sample==Seq(
+          GKEntry(1,1,0),
+          GKEntry(2,1,0),
+          GKEntry(3,1,1)
+        ))
+      }
+    }
     "behave reasonably for a fairly small list of Ints" in {
       import scala.util.Random
       val n: Seq[Int] = (0 until 100).toList

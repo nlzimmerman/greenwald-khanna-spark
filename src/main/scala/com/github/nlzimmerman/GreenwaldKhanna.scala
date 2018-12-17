@@ -104,7 +104,7 @@ class GKRecord[T](
         //sample.insert(0, GKEntry(v, 1, 0))
         GKEntry(v,1,0) +: sample
         // catch the edge case where v is greater than any value in sample here.
-      } else if (v > sample.last.v) {
+      } else if (v >= sample.last.v) {
         //sample.insert(sample.length, GKEntry(v, 1, 0))
         sample :+ GKEntry(v,1,0)
       } else {
@@ -153,7 +153,6 @@ class GKRecord[T](
     def combine(a: GKEntry[T], b: GKEntry[T], carryOver: Long): GKEntry[T] = {
       GKEntry(b.v, a.g+b.g+carryOver, b.delta)
     }
-    // isEqual and combineEquals is not meaningfully unit-tested!!
     def isEqual(a: GKEntry[T], b: GKEntry[T]): Boolean = a.v == b.v
     def combineEquals(a: GKEntry[T], b: GKEntry[T]): GKEntry[T] = {
       GKEntry(a.v, a.g, b.delta+b.g)
@@ -163,7 +162,7 @@ class GKRecord[T](
     }
     // remember that tailrec just exists to get a compiler error if the
     // function isn't tail-recursive. The compiler will find and optimize
-    // tail-recursive functions with or without this annotation. 
+    // tail-recursive functions with or without this annotation.
     @tailrec
     def collapse(
       previous: GKEntry[T],
@@ -173,7 +172,6 @@ class GKRecord[T](
     ): List[GKEntry[T]] = {
       if (remainder.isEmpty) {
         acc :+ previous
-        // isEqual and combineEquals is not meaningfully unit-tested!!
       } else if (isEqual(previous, remainder.head)) {
         collapse(
           combineEquals(previous, remainder.head),
@@ -189,12 +187,13 @@ class GKRecord[T](
           0L
         )
       // doing it this way so that I don't make any new objects in the (usual)
-      // case where carryOver is zero
+      // case where carryOver is zero. I honestly don't know enough about Scala
+      // garbage collection to know if this is important.
       } else if (carryOver != 0) {
         collapse(
-          remainder.head,
+          addCarryOver(remainder.head, carryOver),
           remainder.tail,
-          acc :+ addCarryOver(previous, carryOver),
+          acc :+ previous,
           0L
         )
       } else {
@@ -208,11 +207,60 @@ class GKRecord[T](
         )
       }
     }
-    // never remove the first element
-    val out: List[GKEntry[T]] = if (sample.length > 1) {
-      sample.head +: collapse(sample.tail.head, sample.tail.tail)
-    } else {
-      sample
+    /*  There's some slightly annoying logic here where
+        combineEquals IS allowed to operate on the first element of the list,
+        but combine is NOT allowed to operate on the first element of the list,
+        (because we always want to know what our 0th percentile is and the combine
+        operation removes the smaller value). So we have a whole extra function
+        that almost never does anything to check whether it's appropriate to run
+        combineEquals on the first element(s) of the list.
+      */
+    @tailrec
+    def combineEqualsHead(
+      head: GKEntry[T],
+      remainder: List[GKEntry[T]],
+      carryOver: Long = 0
+    ): (GKEntry[T], List[GKEntry[T]], Long) = {
+      // this is the thing that will nearly always happen, the first two elements
+      // are not equal.
+      if (!isEqual(head, remainder.head) || remainder.isEmpty) {
+        (head, remainder, carryOver)
+      // this is for when we need to combine the first two elements
+      } else {
+        combineEqualsHead(
+          combineEquals(head, remainder.head),
+          remainder.tail,
+          carryOver + remainder.head.g
+        )
+      }
+    }
+
+    val out: List[GKEntry[T]] = {
+      // shouldn't happen but no reason to crash over it.
+      if (sample.length==0) sample
+      else {
+        val (
+          head: GKEntry[T],
+          tail: List[GKEntry[T]],
+          carryOver: Long
+        ) = combineEqualsHead(sample.head, sample.tail)
+        if (tail.length > 1) {
+          // again, I'm doing it this way to avoid creating extra objects which
+          // may not be worth doing.
+          if (carryOver != 0){
+            head +: collapse(addCarryOver(tail.head,carryOver), tail.tail)
+          } else {
+            head +: collapse(tail.head, tail.tail)
+          }
+        // we should really never be down here.
+      } else if (tail.length==1) {
+          if (carryOver != 0) head :: addCarryOver(tail.head, carryOver) :: Nil
+          else head :: tail
+        // tail.length = 0
+        } else {
+          head :: Nil
+        }
+      }
     }
     (new GKRecord[T](epsilon, out, count))
   }
