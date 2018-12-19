@@ -15,7 +15,21 @@ object Python {
   // def addRDD(x: JavaRDD[Double]): Double = x.reduce(
   //   (a: Double, b: Double) => a+b
   // )
-  def add(x: Double, y: Double): Double = x + y
+  //def add(x: Double, y: Double): Double = x + y
+  // loooota boilerplate around numeric types because numeric widening doesn't happen
+  // in py2java
+  def add(x: Double, y: Double): Double = {
+    x + y
+  }
+  def add(x: Int, y: Int): Int = {
+    x + y
+  }
+  def add(x: Int, y: Double): Double = {
+    x.toDouble + y
+  }
+  def add(x: Double, y: Int): Double = {
+    x + y.toDouble
+  }
 }
 
 object Main extends App {
