@@ -30,6 +30,7 @@ object Python {
   def add(x: Double, y: Int): Double = {
     x + y.toDouble
   }
+  def addArray(x: Seq[Double]): Double = x.reduce(_ + _)
 }
 
 object Main extends App {

@@ -9,6 +9,9 @@ object GKQuantile {
   import org.apache.spark.SparkContext._
   import org.apache.spark.rdd.RDD
   import org.apache.spark.rdd.PairRDDFunctions
+  import org.apache.spark.api.java.JavaRDD
+  import java.util.ArrayList
+  import scala.collection.JavaConversions._
   // oof
   // https://stackoverflow.com/questions/16921168/scala-generic-method-no-classtag-available-for-t
   import scala.reflect.ClassTag
@@ -38,6 +41,19 @@ object GKQuantile {
     )
     quantiles.map((q: Double) => d.query(q))
   }
+  // for python compatibility
+  def _getQuantilesInt(
+    x: JavaRDD[Int],
+    quantiles: ArrayList[Double],
+    epsilon: Double
+  ): Array[Int] = getQuantiles(x, quantiles.toSeq, epsilon).toArray
+
+  def _getQuantilesDouble(
+    x: JavaRDD[Double],
+    quantiles: ArrayList[Double],
+    epsilon: Double
+  ): Array[Double] = getQuantiles(x, quantiles.toSeq, epsilon).toArray
+
 
   def getGroupedQuantiles[U:ClassTag, T: ClassTag](
     r: RDD[(U, T)],
