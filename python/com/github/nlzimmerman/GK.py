@@ -1,38 +1,45 @@
 from pyspark.sql import SparkSession
 from pyspark.mllib.common import _java2py, _py2java
 
-# As in the Scala, this class is expected to be a singleton, so all methods
-# should be classmethods or staticmethods
+
+# no longer a singleton because we have some unavoidable install-specific configuration
+
 class GKQuantile(object):
 
-    @classmethod
-    def spark(cls):
+    def __init__(
+        self,
+        master="local[4]",
+        app_name="example",
+        jar_path= "../target/scala-2.11/greenwald-khanna-udaf_2.11-0.0.1.jar"
+    ):
+        self.master = master
+        self.app_name = app_name
+        self.jar_path = jar_path
+
+    def spark(self):
         return (
                 SparkSession.
                 builder.
-                master("local[4]").
-                appName("example").
-                config("spark.jars", "../target/scala-2.11/greenwald-khanna-udaf_2.11-0.0.1.jar").
+                master(self.master).
+                appName(self.app_name).
+                config("spark.jars", self.jar_path).
                 getOrCreate()
             )
 
-    @classmethod
-    def java2py(cls, x):
-        return _java2py(cls.spark(), x)
+    def java2py(self, x):
+        return _java2py(self.spark(), x)
 
-    @classmethod
-    def py2java(cls, x):
-        return _py2java(cls.spark(), x)
+    def py2java(self, x):
+        return _py2java(self.spark(), x)
 
     # just for debugging
-    @classmethod
-    def scalaAdd(cls, x, y):
-        s = cls.spark().sparkContext._jvm.com.github.nlzimmerman.Python.add
-        return s(cls.py2java(x), cls.py2java(y))
+    # do remove this at some point
+    def scalaAdd(self, x, y):
+        s = self.spark().sparkContext._jvm.com.github.nlzimmerman.Python.add
+        return s(self.py2java(x), self.py2java(y))
 
-    @classmethod
     def getQuantiles(
-        cls,
+        self,
         x, #RDD of some numeric type
         quantiles, #list of numbers between 0 and 1
         epsilon = 0.01,
@@ -44,20 +51,20 @@ class GKQuantile(object):
         if force_type is None:
             inferred_type = type(x.first())
             if inferred_type is float:
-                gq = cls.spark().sparkContext._jvm.com.github.nlzimmerman.GKQuantile._getQuantilesDouble
+                gq = self.spark().sparkContext._jvm.com.github.nlzimmerman.GKQuantile._getQuantilesDouble
             elif inferred_type is int:
-                gq = cls.spark().sparkContext._jvm.com.github.nlzimmerman.GKQuantile._getQuantilesInt
+                gq = self.spark().sparkContext._jvm.com.github.nlzimmerman.GKQuantile._getQuantilesInt
             else:
                 raise Exception("couldn't figure out what to do with type {}".format(inferred_type))
-            x = cls.py2java(x)
+            x = self.py2java(x)
         elif force_type is int:
-            gq = cls.spark().sparkContext._jvm.com.github.nlzimmerman.GKQuantile._getQuantilesInt
-            x = cls.py2java(x.map(lambda y: int(y)))
+            gq = self.spark().sparkContext._jvm.com.github.nlzimmerman.GKQuantile._getQuantilesInt
+            x = self.py2java(x.map(lambda y: int(y)))
         elif force_type is float: # force_type is float, beccause we've already
-            gq = cls.spark().sparkContext._jvm.com.github.nlzimmerman.GKQuantile._getQuantilesDouble
-            x = cls.py2java(x.map(lambda y: float(y)))
+            gq = self.spark().sparkContext._jvm.com.github.nlzimmerman.GKQuantile._getQuantilesDouble
+            x = self.py2java(x.map(lambda y: float(y)))
         else:
             raise Exception("We can either force everything to be a float, an int, or do basic type inspection.")
-        eps = cls.py2java(epsilon)
-        q = cls.py2java(quantiles)
-        return cls.java2py(gq(x, q, eps))
+        eps = self.py2java(epsilon)
+        q = self.py2java(quantiles)
+        return self.java2py(gq(x, q, eps))
