@@ -12,6 +12,7 @@ class GKQuantile(object):
                 builder.
                 master("local[4]").
                 appName("example").
+                config("spark.jars", "../target/scala-2.11/greenwald-khanna-udaf_2.11-0.0.1.jar").
                 getOrCreate()
             )
 
