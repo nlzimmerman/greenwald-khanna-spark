@@ -18,16 +18,13 @@ class BasicTest(unittest.TestCase):
             0.82,
             0.95
         ]
-    @unittest.skip("")
     def test_sanity(self):
         self.assertEqual(self.a.count(), 5)
-    @unittest.skip("")
     def test_quantile_float_simple(self):
         x = self.g.getQuantiles(self.a, [0.5], force_type = None)
         self.assertEqual(len(x), 1)
         self.assertEqual(type(x[0]), float)
         self.assertEqual(x[0], 3.0)
-    @unittest.skip("")
     def test_quantile_int_simple(self):
         x = self.g.getQuantiles(self.b, [0.5], force_type = None)
         self.assertEqual(len(x), 1)
@@ -36,7 +33,6 @@ class BasicTest(unittest.TestCase):
     # duplicate the tests that happen in the scala as closely as we can.
     # we're only including the spark tests since those are all that have
     # python wrappers.
-    @unittest.skip("")
     def test_normal_distribution_spark(self):
         n0 = self.g.spark().sparkContext.parallelize(self.normal.numbers, 100)
         for epsilon in [0.005, 0.01, 0.05]:
@@ -52,7 +48,7 @@ class BasicTest(unittest.TestCase):
         n0 = self.g.spark().sparkContext.parallelize(self.normal.numbers, 100).map(lambda x: ("a", x))
         n1 = self.g.spark().sparkContext.parallelize(self.normal.numbers2, 100).map(lambda x: ("b", x))
         nr = n0.union(n1).repartition(100)
-        for epsilon in [0.005]:
+        for epsilon in [0.005, 0.01, 0.05]:
             bounds = Util.inverseNormalCDFBounds(self.targets, epsilon)
             quantiles = self.g.getGroupedQuantiles(nr, self.targets, epsilon, force_type = None)
             # I'm going to do the check in Spark instead of with a collect, just for fun.
@@ -62,7 +58,6 @@ class BasicTest(unittest.TestCase):
                     for key in ("a", "b")
             ]
             bounds_rdd = self.g.spark().sparkContext.parallelize(bounds_list)
-            #print(quantiles.join(bounds_rdd).collect())
             def checker(v):
                 lower_bound = v[0][0]
                 upper_bound = v[0][1]

@@ -1,6 +1,6 @@
 from pyspark.sql import SparkSession
 from pyspark.mllib.common import _java2py, _py2java
-
+import json
 
 # no longer a singleton because we have some unavoidable install-specific configuration
 
@@ -75,7 +75,7 @@ class GKQuantile(object):
            # the value can be an int or a float
         quantiles, # list of numbers between 0 and 1,
         epsilon=0.01,
-        force_type = float
+        force_type = float,
     ):
         '''
         So, this wound up being a huge pain because I didn't know what I was doing.
@@ -84,9 +84,19 @@ class GKQuantile(object):
         it's necessary to unpack those arrays into tuples before you do any Scala on them, and
         it's necessary to turn tuples back into arrays before pulling it back into the python.
 
-        I haven't really dug into how pyspark.ml.common.{_py2java, _java2py}
-        really work.
+        If encode_keys is False, the keys MUST be a string.
         '''
+        # there may be a problem with this; it fails a unit test when encode_keys is True
+        # taking it out for now. Beware!
+        # encode_keys = False
+        # if encode_keys is True:
+        #     key_map = x.keys().distinct().map(lambda y: (y, json.dumps(y)))
+        #     reverse_key_map = key_map.map(lambda y: (y[1], y[0]))
+        #     # swap out the old key with the new one.
+        #     x = x.join(key_map).map(
+        #         lambda y: (y[1][1], y[1][0])
+        #     )
+
         if force_type is None:
             inferred_type = type(x.first()[1])
             if inferred_type is float:
@@ -110,5 +120,9 @@ class GKQuantile(object):
         eps = self.py2java(epsilon)
         q = self.py2java(quantiles)
         out = self.java2py(ggq(x, q, eps))
-        #out.ctx = self.spark()
+        # if we encoded the keys, now we have to get them back.
+        # if encode_keys is True:
+        #     out = out.map(lambda x: (x[0][0], (x[0][1], x[1]))).join(reverse_key_map).map(
+        #         lambda x: ((x[1][1], x[1][0][0]), x[1][0][1])
+        #     )
         return out

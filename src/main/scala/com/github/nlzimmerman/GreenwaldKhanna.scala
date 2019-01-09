@@ -106,21 +106,21 @@ object GKQuantile {
     val asRDDArray: RDD[Array[Any]] = asRDDAny.map(
       (x: Any) => x.asInstanceOf[Array[Any]]
     )
-    val asRDDTuple: RDD[(String, Double)] = asRDDArray.map(
+    val asRDDTuple: RDD[(Any, Double)] = asRDDArray.map(
       (x: Array[Any]) => {
         // is this check really necessary? I don't think it slows things down much.
         if (x.length != 2) throw new Exception(s"Array $x is not of length 2.")
-        (x(0).asInstanceOf[String], x(1).asInstanceOf[Double])
+        (x(0), x(1).asInstanceOf[Double])
       }
     )
     // now we have the types straight so we can actually do the grouped quantiles.
-    val calculated: RDD[((String, Double), Double)] = getGroupedQuantiles(
+    val calculated: RDD[((Any, Double), Double)] = getGroupedQuantiles(
       asRDDTuple, quantiles, epsilon
     )
     // and now we need to get that back into something that py4j can handle.
     // which, again, is nested Arrays.
     val calculatedArrays: RDD[Array[Any]] = calculated.map(
-      (x: ((String, Double), Double)) => {
+      (x: ((Any, Double), Double)) => {
         // I guess pattern matching is less ugly here.
         Array(Array(x._1._1, x._1._2), x._2)
       }
