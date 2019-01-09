@@ -1,5 +1,5 @@
 from pyspark.sql import SparkSession
-from pyspark.mllib.common import _java2py, _py2java
+from pyspark.ml.common import _java2py, _py2java
 
 
 # no longer a singleton because we have some unavoidable install-specific configuration
@@ -68,3 +68,49 @@ class GKQuantile(object):
         eps = self.py2java(epsilon)
         q = self.py2java(quantiles)
         return self.java2py(gq(x, q, eps))
+    def getGroupedQuantiles(
+        self,
+        x, #RDD of key-value pairs, where the value is a number of some type.
+        quantiles, # list of numbers between 0 and 1,
+        epsilon=0.01,
+        force_type = float
+    ):
+        '''
+        So, this wound up being a huge pain because I didn't know what I was doing.
+        Here's the big idea: py4j works on Arrays of primitive types. So it's necessary
+        to unpack those arrays into tuples before you do any Scala on them, and
+        it's necessary to turn tuples back into arrays before pulling it back into the python.
+
+        I haven't really dug into how pyspark.ml.common.{_py2java, _java2py}
+        really work.
+        '''
+        # self.py2java turns our RDD of two-item tuples into an RDD[Array[Any]]
+        # This function will cast that into an RDD[(String, Double)]
+        t2 = self.spark().sparkContext._jvm.com.github.nlzimmerman.GKQuantile._StringDoubleToTuple2
+        # This function will cast our RDD[((String, Double), Double)] into an RDD[Array[Any]]
+        unpack = self.spark().sparkContext._jvm.com.github.nlzimmerman.GKQuantile._groupedQuantilesToPython
+        if force_type is None:
+            inferred_type = type(x.first()[1])
+            if inferred_type is float:
+                ggq = self.spark().sparkContext._jvm.com.github.nlzimmerman.GKQuantile._getGroupedQuantilesDouble
+            elif inferred_type is int:
+                ggq = self.spark().sparkContext._jvm.com.github.nlzimmerman.GKQuantile._getGroupedQuantilesInt
+            else:
+                raise Exception("couldn't figure out what to do with type {}".format(inferred_type))
+            x = t2(self.py2java(x))
+        elif force_type is int:
+            ggq = self.spark().sparkContext._jvm.com.github.nlzimmerman.GKQuantile._getGroupedQuantilesInt
+            #x = self.py2java(x.mapValues(lambda x: int(x)))
+            x = t2(self.py2java(x.mapValues(lambda x: int(x))))
+        elif force_type is float:
+            ggq = self.spark().sparkContext._jvm.com.github.nlzimmerman.GKQuantile._getGroupedQuantilesDouble
+            x = t2(self.py2java(x.mapValues(lambda x: float(x))))
+            #x = x.mapValues(lambda x: float(x))
+        else:
+            raise Exception("We can either force every value to be a float, an int, or do basic type inspection.")
+        
+        eps = self.py2java(epsilon)
+        q = self.py2java(quantiles)
+        out = ggq(x, q, eps)
+
+        return self.java2py(unpack(out))

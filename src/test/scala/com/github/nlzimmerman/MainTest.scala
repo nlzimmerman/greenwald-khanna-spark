@@ -1,6 +1,9 @@
 package com.github.nlzimmerman
 
 import org.scalatest.{WordSpec, Ignore}
+import java.util.ArrayList
+import scala.collection.JavaConverters._
+import org.apache.spark.SparkContext._
 
 object TestParams {
   val targets: Seq[Double] = Seq(
@@ -276,8 +279,13 @@ class SparkSuite extends WordSpec {
       val nr: RDD[(String, Double)] = n0.union(n1).repartition(100)
       def gkCheckSpark(epsilon: Double): Unit = {
         val bounds: Seq[(Double, Double)] = inverseNormalCDFBounds(targets, epsilon)
+        // this is a hack to make sure that getGroupedQuantilesDouble works. I need to spin it out into its own test soon!!
         val quantiles: Map[(String, Double), Double] =
-          GKQuantile.getGroupedQuantiles(nr, targets, epsilon).collectAsMap.toMap
+          {
+            {
+              GKQuantile._getGroupedQuantilesDouble(nr, {new ArrayList[Double](targets.asJava)}, epsilon)
+            }: RDD[((String, Double), Double)]
+          }.collectAsMap.toMap
         val aValues: Seq[Double] = targets.map((x: Double) => quantiles(("a", x)))
         val bValues: Seq[Double] = targets.map((x: Double) => quantiles(("b", x)))
         boundsCheck(aValues, bounds)

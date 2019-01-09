@@ -18,14 +18,17 @@ class BasicTest(unittest.TestCase):
             0.82,
             0.95
         ]
+    @unittest.skip("")
     def test_sanity(self):
         self.assertEqual(self.a.count(), 5)
+    @unittest.skip("")
     def test_quantile_float_simple(self):
         x = self.g.getQuantiles(self.a, [0.5], force_type = None)
         self.assertEqual(len(x), 1)
         self.assertEqual(type(x[0]), float)
         self.assertEqual(x[0], 3.0)
-    def test_quantile_iunt_simple(self):
+    @unittest.skip("")
+    def test_quantile_int_simple(self):
         x = self.g.getQuantiles(self.b, [0.5], force_type = None)
         self.assertEqual(len(x), 1)
         self.assertEqual(type(x[0]), int)
@@ -33,6 +36,7 @@ class BasicTest(unittest.TestCase):
     # duplicate the tests that happen in the scala as closely as we can.
     # we're only including the spark tests since those are all that have
     # python wrappers.
+    @unittest.skip("")
     def test_normal_distribution_spark(self):
         n0 = self.g.spark().sparkContext.parallelize(self.normal.numbers, 100)
         for epsilon in [0.005, 0.01, 0.05]:
@@ -43,6 +47,20 @@ class BasicTest(unittest.TestCase):
             for b, x in zip(bounds, n):
                 self.assertTrue(b[0] <= x)
                 self.assertTrue(x <= b[1])
+    def test_normal_groupBy_spark(self):
+        ''' inversion by key '''
+        n0 = self.g.spark().sparkContext.parallelize(self.normal.numbers, 100).map(lambda x: ("a", x))
+        n1 = self.g.spark().sparkContext.parallelize(self.normal.numbers2, 100).map(lambda x: ("b", x))
+        nr = n0.union(n1).repartition(100)
+        for epsilon in [0.005]:
+            bounds = Util.inverseNormalCDFBounds(self.targets, epsilon)
+            quantiles = self.g.getGroupedQuantiles(nr, self.targets, epsilon, force_type = None)
+            print(quantiles.collectAsMap())
+            #print("Q")
+            #print(nr.ctx)
+            #print(quantiles.count())
+
+
 
 
 

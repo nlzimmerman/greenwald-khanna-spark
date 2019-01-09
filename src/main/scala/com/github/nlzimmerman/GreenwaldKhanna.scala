@@ -1,9 +1,10 @@
 package com.github.nlzimmerman
 
+// _ imports aren't a great way to learn a language but I use the implicits all the time.
+import scala.collection.JavaConverters._
+import org.apache.spark.SparkContext._
 
 import scala.annotation.tailrec
-// For now this is a line-for-line rewrite of what I did in Python;
-// Then I'll move it into a class
 
 object GKQuantile {
   import org.apache.spark.SparkContext._
@@ -59,10 +60,12 @@ object GKQuantile {
     r: RDD[(U, T)],
     quantiles: Seq[Double],
     epsilon: Double = 0.01
-  )(implicit num: Numeric[T]): PairRDDFunctions[(U, Double), T] = {
+  )(implicit num: Numeric[T]): RDD[((U, Double), T)] = {
     import num._
-    val p: PairRDDFunctions[U, T] = new PairRDDFunctions[U, T](r)
-
+    // this makes conversion to and from PairRDDFunctions automatic
+    import org.apache.spark.SparkContext._
+    //val p: PairRDDFunctions[U, T] = new PairRDDFunctions[U, T](r)
+    val p: PairRDDFunctions[U, T] = r
     val aggregated: PairRDDFunctions[U, GKRecord[T]] = p.aggregateByKey[GKRecord[T]](
       new GKRecord[T](epsilon)
     )(
@@ -85,7 +88,74 @@ object GKQuantile {
     )
     //new PairRDDFunctions[(U, Double), T](staged)
   }
+  /* Python compatibility to the above */
+  def _getGroupedQuantilesDouble(
+    r: JavaRDD[(String, Double)],
+    quantiles: ArrayList[Double],
+    epsilon: Double = 0.01
+  ): JavaRDD[((String, Double), Double)] = {
+    val x: RDD[((String, Double), Double)] = getGroupedQuantiles(
+      r, quantiles, epsilon
+    )
+    x.toJavaRDD
+  }
+  // def _getGroupedQuantilesDouble(
+  //   r: JavaRDD[(String, Double)],
+  //   quantiles: ArrayList[Double],
+  //   epsilon: Double = 0.01
+  // ): JavaRDD[(String, Double, Double)] = {
+  //   val x: RDD[((String, Double), Double)] = getGroupedQuantiles(
+  //     r, quantiles, epsilon
+  //   )
+  //   x.map((z) => (z._1._1, z._1._2, z._2)).toJavaRDD
+  // }
+  // YIKES.
+  // This is what it takes to get us where we need to turn the python RDD
+  // into a scala RDD of the right type
+  def _StringDoubleToTuple2(a: JavaRDD[Any]): JavaRDD[(String, Double)] = {
+
+    val x: RDD[Any] = a
+    val y: RDD[Array[Any]] = x.map((x: Any) => x.asInstanceOf[Array[Any]])
+    val z: RDD[(String, Double)] = y.map((l: Array[Any]) => (
+      l(0).asInstanceOf[String],
+      l(1).asInstanceOf[Double]
+    ))
+    z
+  }
+  def _groupedQuantilesToPython(a: JavaRDD[Any]): JavaRDD[Array[Any]] = {
+    import scala.collection.JavaConverters._
+    import org.apache.spark.SparkContext._
+    val x: RDD[Any] = a
+    // YIKES
+    val xCast: RDD[((String, Double), Double)] = x.map(
+      (x: Any) => x.asInstanceOf[((String, Double), Double)]
+    )
+    val xArray: RDD[Array[Any]] = xCast.map(
+      (x: ((String, Double), Double)) => {
+        Array(Array(x._1._1, x._1._2), x._2)
+      }
+    )
+    xArray
+  }
+  // def _getGroupedQuantilesDouble(
+  //   r: JavaRDD[(String, Double)],
+  //   quantiles: ArrayList[Double],
+  //   epsilon: Double = 0.01
+  // ): JavaRDD[(String, Double)] = r
+
+  def _getGroupedQuantilesInt[U: ClassTag](
+    r: JavaRDD[(U, Int)],
+    quantiles: Seq[Double],
+    epsilon: Double = 0.01
+  ): JavaRDD[((U, Double), Int)] = {
+    val x: RDD[((U, Double), Int)] = getGroupedQuantiles(
+      r, quantiles, epsilon
+    )
+    x.toJavaRDD
+  }
 }
+
+
 
 // beware — the right basis for comparison is usually just going to be on v
 // but I think it's still fine to make this a case class
