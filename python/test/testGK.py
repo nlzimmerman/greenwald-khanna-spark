@@ -55,7 +55,32 @@ class BasicTest(unittest.TestCase):
         for epsilon in [0.005]:
             bounds = Util.inverseNormalCDFBounds(self.targets, epsilon)
             quantiles = self.g.getGroupedQuantiles(nr, self.targets, epsilon, force_type = None)
-            print(quantiles.collectAsMap())
+            # I'm going to do the check in Spark instead of with a collect, just for fun.
+            bounds_list = [
+                ((key, t), b)
+                    for t, b in zip(self.targets, bounds)
+                    for key in ("a", "b")
+            ]
+            bounds_rdd = self.g.spark().sparkContext.parallelize(bounds_list)
+            #print(quantiles.join(bounds_rdd).collect())
+            def checker(v):
+                lower_bound = v[0][0]
+                upper_bound = v[0][1]
+                value = v[1]
+                return (
+                    (lower_bound <= value) and
+                    (value <= upper_bound)
+                )
+            # this check is too clever since it won't tell you
+            # which of the bounds fails. But I did do a more thorough check
+            # in the Scala unit tests.
+            self.assertTrue(
+                bounds_rdd.join(
+                    quantiles
+                ).mapValues(checker).values().reduce(
+                    lambda x, y: x and y
+                )
+            )
             #print("Q")
             #print(nr.ctx)
             #print(quantiles.count())

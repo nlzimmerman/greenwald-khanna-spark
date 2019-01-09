@@ -89,15 +89,45 @@ object GKQuantile {
     //new PairRDDFunctions[(U, Double), T](staged)
   }
   /* Python compatibility to the above */
-  def _getGroupedQuantilesDouble(
-    r: JavaRDD[(String, Double)],
-    quantiles: ArrayList[Double],
-    epsilon: Double = 0.01
-  ): JavaRDD[((String, Double), Double)] = {
-    val x: RDD[((String, Double), Double)] = getGroupedQuantiles(
-      r, quantiles, epsilon
+  def _PyGetGroupedQuantilesStringDouble(
+    r: JavaRDD[Any], // needs to be a Python RDD of (string, float)
+                     // we will do type coercion to make this the case
+                     // and that will give a runtime error if that's not the case.
+    quantiles: ArrayList[Double], // this is a Python list of float
+    epsilon: Double = 0.01        // just a python float
+  ): JavaRDD[Array[Any]] = { // this is ((String, Double), Double) but with both tuples converted to Arrays.
+    /*
+    * this takes advantage of the implicits imported at the top of the file.
+    * there may be a more parsimonious way of writing this but I don't think this
+    * way is slower.
+    */
+    // JavaRDD[Any] to RDD[Any]
+    val asRDDAny: RDD[Any] = r
+    val asRDDArray: RDD[Array[Any]] = asRDDAny.map(
+      (x: Any) => x.asInstanceOf[Array[Any]]
     )
-    x.toJavaRDD
+    val asRDDTuple: RDD[(String, Double)] = asRDDArray.map(
+      (x: Array[Any]) => {
+        // is this check really necessary? I don't think it slows things down much.
+        if (x.length != 2) throw new Exception(s"Array $x is not of length 2.")
+        (x(0).asInstanceOf[String], x(1).asInstanceOf[Double])
+      }
+    )
+    // now we have the types straight so we can actually do the grouped quantiles.
+    val calculated: RDD[((String, Double), Double)] = getGroupedQuantiles(
+      asRDDTuple, quantiles, epsilon
+    )
+    // and now we need to get that back into something that py4j can handle.
+    // which, again, is nested Arrays.
+    val calculatedArrays: RDD[Array[Any]] = calculated.map(
+      (x: ((String, Double), Double)) => {
+        // I guess pattern matching is less ugly here.
+        Array(Array(x._1._1, x._1._2), x._2)
+      }
+    )
+    // finally, use another implicit to get the type right.
+    val calculatedArraysJava: JavaRDD[Array[Any]] = calculatedArrays.toJavaRDD
+    calculatedArraysJava
   }
   // def _getGroupedQuantilesDouble(
   //   r: JavaRDD[(String, Double)],
