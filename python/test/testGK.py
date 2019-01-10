@@ -76,9 +76,12 @@ class BasicTest(unittest.TestCase):
                     lambda x, y: x and y
                 )
             )
-            #print("Q")
-            #print(nr.ctx)
-            #print(quantiles.count())
+    def test_int_groupBy_spark_simple(self):
+        n0 = self.g.spark().sparkContext.parallelize([0,1,2,3,4]).map(lambda x: ("foo", x))
+        q = self.g.getGroupedQuantiles(n0, [0.5], 0.01, force_type = None)
+        x = q.collect()[0][1]
+        self.assertEqual(x, 2)
+        self.assertTrue(type(x) is int)
 
 
 

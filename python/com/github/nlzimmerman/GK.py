@@ -100,18 +100,18 @@ class GKQuantile(object):
         if force_type is None:
             inferred_type = type(x.first()[1])
             if inferred_type is float:
-                ggq = self.spark().sparkContext._jvm.com.github.nlzimmerman.GKQuantile._PyGetGroupedQuantilesStringDouble
+                ggq = self.spark().sparkContext._jvm.com.github.nlzimmerman.GKQuantile._PyGetGroupedQuantilesDouble
             elif inferred_type is int:
-                ggq = self.spark().sparkContext._jvm.com.github.nlzimmerman.GKQuantile._getGroupedQuantilesInt
+                ggq = self.spark().sparkContext._jvm.com.github.nlzimmerman.GKQuantile._PyGetGroupedQuantilesInt
             else:
                 raise Exception("couldn't figure out what to do with type {}".format(inferred_type))
             x = self.py2java(x)
         elif force_type is int:
-            ggq = self.spark().sparkContext._jvm.com.github.nlzimmerman.GKQuantile._getGroupedQuantilesInt
+            ggq = self.spark().sparkContext._jvm.com.github.nlzimmerman.GKQuantile._PyGetGroupedQuantilesInt
             #x = self.py2java(x.mapValues(lambda x: int(x)))
             x = self.py2java(x.mapValues(lambda x: int(x)))
         elif force_type is float:
-            ggq = self.spark().sparkContext._jvm.com.github.nlzimmerman.GKQuantile._PyGetGroupedQuantilesStringDouble
+            ggq = self.spark().sparkContext._jvm.com.github.nlzimmerman.GKQuantile._PyGetGroupedQuantilesDouble
             x = self.py2java(x.mapValues(lambda x: float(x)))
             #x = x.mapValues(lambda x: float(x))
         else:

@@ -89,7 +89,41 @@ object GKQuantile {
     //new PairRDDFunctions[(U, Double), T](staged)
   }
   /* Python compatibility to the above */
-  def _PyGetGroupedQuantilesStringDouble(
+  /*  this is called by _PyGetGroupedQuantilesStringDouble and _PyGetGroupedQuantilesStringInt
+    * it's private just so I don't forget what it's here for. :)
+    */
+  private def pyToTuple2[T](x: JavaRDD[Any]): RDD[(Any, T)] = {
+    /*
+    * this takes advantage of the implicits imported at the top of the file.
+    * there may be a more parsimonious way of writing this but I don't think this
+    * way is slower.
+    */
+    // JavaRDD[Any] to RDD[Any]
+    val asRDDAny: RDD[Any] = x
+    val asRDDArray: RDD[Array[Any]] = asRDDAny.map(
+      (x: Any) => x.asInstanceOf[Array[Any]]
+    )
+    val asRDDTuple: RDD[(Any, T)] = asRDDArray.map(
+      (x: Array[Any]) => {
+        // is this check really necessary? I don't think it slows things down much.
+        if (x.length != 2) throw new Exception(s"Array $x is not of length 2.")
+        (x(0), x(1).asInstanceOf[T])
+      }
+    )
+    asRDDTuple
+  }
+  private def groupedQuantilesToPython[T](x: RDD[((Any, Double), T)]): JavaRDD[Array[Any]] = {
+    val calculatedArrays: RDD[Array[Any]] = x.map(
+      (y: ((Any, Double), T)) => {
+        Array(Array(y._1._1, y._1._2), y._2)
+      }
+    )
+    /*  this also takes advantage of one of the implicits we imported at the top
+      * of the file.
+      */
+    calculatedArrays.toJavaRDD
+  }
+  def _PyGetGroupedQuantilesDouble(
     r: JavaRDD[Any], // needs to be a Python RDD of (string, float)
                      // we will do type coercion to make this the case
                      // and that will give a runtime error if that's not the case.
@@ -100,88 +134,32 @@ object GKQuantile {
     * this takes advantage of the implicits imported at the top of the file.
     * there may be a more parsimonious way of writing this but I don't think this
     * way is slower.
+    *
+    * Also, this might be a little bit dangerous: I'm not inspecting the type of the key
+    * at ALL: it stays Any all the way through. I haven't read up on whether this is
+    * safe with reduceByKey or not.
     */
     // JavaRDD[Any] to RDD[Any]
-    val asRDDAny: RDD[Any] = r
-    val asRDDArray: RDD[Array[Any]] = asRDDAny.map(
-      (x: Any) => x.asInstanceOf[Array[Any]]
-    )
-    val asRDDTuple: RDD[(Any, Double)] = asRDDArray.map(
-      (x: Array[Any]) => {
-        // is this check really necessary? I don't think it slows things down much.
-        if (x.length != 2) throw new Exception(s"Array $x is not of length 2.")
-        (x(0), x(1).asInstanceOf[Double])
-      }
-    )
+    val rScala: RDD[(Any, Double)] = pyToTuple2(r)
     // now we have the types straight so we can actually do the grouped quantiles.
     val calculated: RDD[((Any, Double), Double)] = getGroupedQuantiles(
-      asRDDTuple, quantiles, epsilon
+      rScala, quantiles, epsilon
     )
     // and now we need to get that back into something that py4j can handle.
     // which, again, is nested Arrays.
-    val calculatedArrays: RDD[Array[Any]] = calculated.map(
-      (x: ((Any, Double), Double)) => {
-        // I guess pattern matching is less ugly here.
-        Array(Array(x._1._1, x._1._2), x._2)
-      }
-    )
-    // finally, use another implicit to get the type right.
-    val calculatedArraysJava: JavaRDD[Array[Any]] = calculatedArrays.toJavaRDD
-    calculatedArraysJava
+    groupedQuantilesToPython(calculated)
   }
-  // def _getGroupedQuantilesDouble(
-  //   r: JavaRDD[(String, Double)],
-  //   quantiles: ArrayList[Double],
-  //   epsilon: Double = 0.01
-  // ): JavaRDD[(String, Double, Double)] = {
-  //   val x: RDD[((String, Double), Double)] = getGroupedQuantiles(
-  //     r, quantiles, epsilon
-  //   )
-  //   x.map((z) => (z._1._1, z._1._2, z._2)).toJavaRDD
-  // }
-  // YIKES.
-  // This is what it takes to get us where we need to turn the python RDD
-  // into a scala RDD of the right type
-  def _StringDoubleToTuple2(a: JavaRDD[Any]): JavaRDD[(String, Double)] = {
 
-    val x: RDD[Any] = a
-    val y: RDD[Array[Any]] = x.map((x: Any) => x.asInstanceOf[Array[Any]])
-    val z: RDD[(String, Double)] = y.map((l: Array[Any]) => (
-      l(0).asInstanceOf[String],
-      l(1).asInstanceOf[Double]
-    ))
-    z
-  }
-  def _groupedQuantilesToPython(a: JavaRDD[Any]): JavaRDD[Array[Any]] = {
-    import scala.collection.JavaConverters._
-    import org.apache.spark.SparkContext._
-    val x: RDD[Any] = a
-    // YIKES
-    val xCast: RDD[((String, Double), Double)] = x.map(
-      (x: Any) => x.asInstanceOf[((String, Double), Double)]
-    )
-    val xArray: RDD[Array[Any]] = xCast.map(
-      (x: ((String, Double), Double)) => {
-        Array(Array(x._1._1, x._1._2), x._2)
-      }
-    )
-    xArray
-  }
-  // def _getGroupedQuantilesDouble(
-  //   r: JavaRDD[(String, Double)],
-  //   quantiles: ArrayList[Double],
-  //   epsilon: Double = 0.01
-  // ): JavaRDD[(String, Double)] = r
-
-  def _getGroupedQuantilesInt[U: ClassTag](
-    r: JavaRDD[(U, Int)],
-    quantiles: Seq[Double],
+  def _PyGetGroupedQuantilesInt(
+    r: JavaRDD[Any],
+    quantiles: ArrayList[Double],
     epsilon: Double = 0.01
-  ): JavaRDD[((U, Double), Int)] = {
-    val x: RDD[((U, Double), Int)] = getGroupedQuantiles(
-      r, quantiles, epsilon
+  ): JavaRDD[Array[Any]] = {
+    val rScala: RDD[(Any, Int)] = pyToTuple2(r)
+    val calculated: RDD[((Any, Double), Int)]= getGroupedQuantiles(
+      rScala, quantiles, epsilon
     )
-    x.toJavaRDD
+    groupedQuantilesToPython(calculated)
   }
 }
 
