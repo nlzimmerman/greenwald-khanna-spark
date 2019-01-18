@@ -183,12 +183,8 @@ class GKRecord[T](
   import num._
   val compressThreshold: Long = (1.0/(2.0*epsilon)).toLong
 
-  def listInsert[U](l: List[U], i: Int, a: U): List[U] = {
-    (l.dropRight(l.length-i) :+ a) ::: l.drop(i)
-  }
-  def listReplace[U](l: List[U], i: Int, a: U): List[U] = {
-    (l.dropRight(l.length-i) :+ a) ::: l.drop(i+1)
-  }
+  /* defs for listInsert and listReplace were moved to the package object! */
+  
   def insert(v: T): GKRecord[T] = {
     val newSample: List[GKEntry[T]] = {
       if (

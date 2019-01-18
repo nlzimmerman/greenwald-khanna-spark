@@ -1,5 +1,5 @@
 package com.github.nlzimmerman
-import org.apache.spark.sql.{SparkSession, Dataset}
+import org.apache.spark.sql.{SparkSession, Dataset, DataFrame}
 import org.apache.spark.rdd.RDD
 import org.apache.spark.api.java.{JavaDoubleRDD, JavaRDD}
 import org.apache.log4j.{Level, Logger}
@@ -34,6 +34,8 @@ object Python {
 }
 
 object Main extends App {
+  import org.apache.spark.SparkContext._
+  import com.github.nlzimmerman._
   Logger.getLogger("org.apache.spark").setLevel(Level.WARN)
   Logger.getLogger("akka").setLevel(Level.WARN)
   lazy val spark: SparkSession = {
@@ -43,10 +45,37 @@ object Main extends App {
     appName("example").
     getOrCreate()
   }
-  val b: Seq[Int] = Seq(1,2,3,2)
-  val r: GKRecord[Int] = b.foldLeft(new GKRecord[Int](0.1))((x: GKRecord[Int], a: Int) => x.insert(a))
-  println(r.sample)
-  println(r.compress.sample)
+  import spark.sqlContext.implicits._
+  // val b: Seq[Int] = Seq(1,2,3,2)
+  // val r: GKRecord[Int] = b.foldLeft(new GKRecord[Int](0.1))((x: GKRecord[Int], a: Int) => x.insert(a))
+  // println(r.sample)
+  // println(r.compress.sample)
+  case class Entry(name: String, value: Int)
+  val n0: Dataset[Entry] = Seq(
+    Entry("a", 0),
+    Entry("a", 1),
+    Entry("a", 2),
+    Entry("a", 3),
+    Entry("a", 4),
+    Entry("b", 5),
+    Entry("b", 6),
+    Entry("b", 7),
+    Entry("b", 8),
+    Entry("b", 9)
+  ).toDS
+  n0.show
+  //val n1: Dataset[Double] = n0.map(_.value)
+  // println(n1.show)
+  val medianizer: GKAggregator[Int] = new GKAggregator[Int](0.5, 0.01)
+  // val result = n1.select(medianizer.toColumn)
+  n0.groupByKey(_.name).mapValues(_.value).agg(medianizer.toColumn.name("median")).show
+  val n2: DataFrame = n0.toDF
+  n2.show
+  val medianizerUntyped: UntypedGKAggregator = new UntypedGKAggregator(0.5, 0.01)
+  println("DS untyped")
+  n0.groupBy($"name").agg(medianizerUntyped($"value").alias("median")).show
+  println("DF untyped")
+  n0.toDF.groupBy($"name").agg(medianizerUntyped($"value").alias("median")).show
   //
   // println(spark.sparkContext.parallelize(Seq(1,2,3)).reduce(_ + _))
   /*  Spark tends to throw errors in local mode when shutting down;
