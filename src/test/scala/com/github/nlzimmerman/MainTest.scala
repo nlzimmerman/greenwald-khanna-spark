@@ -283,7 +283,7 @@ class SparkSuite extends WordSpec {
         val quantiles: Map[(String, Double), Double] =
           {
             {
-              GKQuantile._getGroupedQuantilesDouble(nr, {new ArrayList[Double](targets.asJava)}, epsilon)
+              GKQuantile.getGroupedQuantiles(nr, targets, epsilon)
             }: RDD[((String, Double), Double)]
           }.collectAsMap.toMap
         val aValues: Seq[Double] = targets.map((x: Double) => quantiles(("a", x)))
