@@ -2,13 +2,22 @@ import unittest
 from com.github.nlzimmerman.GK import *
 from scipy.special import erf, erfinv
 from math import log, sin, cos, pi, pow
+from pyspark.sql import SparkSession
 import random
 
 class BasicTest(unittest.TestCase):
     def setUp(self):
-        self.g = GKQuantile()
-        self.a = self.g.spark().sparkContext.parallelize([1.0,2.0,3.0,4.0,5.0])
-        self.b = self.g.spark().sparkContext.parallelize([10,20,30,40,50])
+        self.sparkSession = (
+                    SparkSession.
+                    builder.
+                    master("local[4]").
+                    appName("unit test").
+                    config("spark.jars", "../target/scala-2.11/greenwald-khanna-udaf_2.11-0.0.1.jar").
+                    getOrCreate()
+                )
+        self.g = GKQuantile(self.sparkSession)
+        self.a = self.sparkSession.sparkContext.parallelize([1.0,2.0,3.0,4.0,5.0])
+        self.b = self.sparkSession.sparkContext.parallelize([10,20,30,40,50])
         self.normal = NormalNumbers()
         # these are NOT the same targets I used in the Scala tests, just to mix it up
         self.targets = [
@@ -34,7 +43,7 @@ class BasicTest(unittest.TestCase):
     # we're only including the spark tests since those are all that have
     # python wrappers.
     def test_normal_distribution_spark(self):
-        n0 = self.g.spark().sparkContext.parallelize(self.normal.numbers, 100)
+        n0 = self.sparkSession.sparkContext.parallelize(self.normal.numbers, 100)
         for epsilon in [0.005, 0.01, 0.05]:
             bounds = Util.inverseNormalCDFBounds(self.targets, epsilon)
             # getQuantiles returns a LIST, not an RDD
@@ -45,8 +54,8 @@ class BasicTest(unittest.TestCase):
                 self.assertTrue(x <= b[1])
     def test_normal_groupBy_spark(self):
         ''' inversion by key '''
-        n0 = self.g.spark().sparkContext.parallelize(self.normal.numbers, 100).map(lambda x: ("a", x))
-        n1 = self.g.spark().sparkContext.parallelize(self.normal.numbers2, 100).map(lambda x: ("b", x))
+        n0 = self.g.sparkSession.sparkContext.parallelize(self.normal.numbers, 100).map(lambda x: ("a", x))
+        n1 = self.g.sparkSession.sparkContext.parallelize(self.normal.numbers2, 100).map(lambda x: ("b", x))
         nr = n0.union(n1).repartition(100)
         for epsilon in [0.005, 0.01, 0.05]:
             bounds = Util.inverseNormalCDFBounds(self.targets, epsilon)
@@ -57,7 +66,7 @@ class BasicTest(unittest.TestCase):
                     for t, b in zip(self.targets, bounds)
                     for key in ("a", "b")
             ]
-            bounds_rdd = self.g.spark().sparkContext.parallelize(bounds_list)
+            bounds_rdd = self.g.sparkSession.sparkContext.parallelize(bounds_list)
             def checker(v):
                 lower_bound = v[0][0]
                 upper_bound = v[0][1]
@@ -77,7 +86,7 @@ class BasicTest(unittest.TestCase):
                 )
             )
     def test_int_groupBy_spark_simple(self):
-        n0 = self.g.spark().sparkContext.parallelize([0,1,2,3,4]).map(lambda x: ("foo", x))
+        n0 = self.g.sparkSession.sparkContext.parallelize([0,1,2,3,4]).map(lambda x: ("foo", x))
         q = self.g.getGroupedQuantiles(n0, [0.5], 0.01, force_type = None)
         x = q.collect()[0][1]
         self.assertEqual(x, 2)
