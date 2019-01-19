@@ -51,6 +51,7 @@ object Main extends App {
   // println(r.sample)
   // println(r.compress.sample)
   case class Entry(name: String, value: Int)
+  case class DoubleEntry(name: String, value: Double)
   val n0: Dataset[Entry] = Seq(
     Entry("a", 0),
     Entry("a", 1),
@@ -64,18 +65,35 @@ object Main extends App {
     Entry("b", 9)
   ).toDS
   n0.show
+  val n0double: Dataset[DoubleEntry] = n0.map(
+    (x: Entry) => DoubleEntry(x.name, x.value.toDouble)
+  )
+  n0double.show
   //val n1: Dataset[Double] = n0.map(_.value)
   // println(n1.show)
-  val medianizer: GKAggregator[Int] = new GKAggregator[Int](0.5, 0.01)
+  val medianizer: GKAggregator[Int] = new GKAggregator[Int](Seq(0.5), 0.01)
+  val medianizerDouble: GKAggregator[Double] = new GKAggregator[Double](Seq(0.5), 0.01)
   // val result = n1.select(medianizer.toColumn)
-  n0.groupByKey(_.name).mapValues(_.value).agg(medianizer.toColumn.name("median")).show
+
+  n0double.groupByKey(_.name).mapValues(_.value).
+    agg(medianizerDouble.toColumn.name("median")).show
+  println(
+    n0double.groupByKey(_.name).mapValues(_.value).
+      agg(medianizerDouble.toColumn.name("median")).collect.mkString("\n")
+  )
+
   val n2: DataFrame = n0.toDF
   n2.show
-  val medianizerUntyped: UntypedGKAggregator = new UntypedGKAggregator(0.5, 0.01)
+  val medianizerUntyped: UntypedGKAggregator = new UntypedGKAggregator(Seq(0.5), 0.01)
   println("DS untyped")
   n0.groupBy($"name").agg(medianizerUntyped($"value").alias("median")).show
   println("DF untyped")
   n0.toDF.groupBy($"name").agg(medianizerUntyped($"value").alias("median")).show
+  println(
+    n0.groupBy($"name").agg(medianizerUntyped($"value").alias("median")).
+      collect.mkString("\n")
+  )
+
   //
   // println(spark.sparkContext.parallelize(Seq(1,2,3)).reduce(_ + _))
   /*  Spark tends to throw errors in local mode when shutting down;

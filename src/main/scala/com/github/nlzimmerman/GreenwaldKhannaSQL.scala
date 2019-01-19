@@ -21,25 +21,27 @@ import org.apache.spark.sql.types.{
   DoubleType,
   StructType,
   StructField,
-  ArrayType
+  ArrayType,
+  MapType
 }
 
 // I don't fully understand what the : Encoder party does but it needs to be there.
 class GKAggregator[T: Numeric: Encoder](
-  quantile: Double,
+  quantiles: Seq[Double],
   epsilon: Double
-) extends Aggregator[T, GKRecord[T], T] with Serializable {
-
+) extends Aggregator[T, GKRecord[T], Map[Double,T]] with Serializable {
   private val numeric = implicitly[Numeric[T]]
 
   def zero: GKRecord[T] = new GKRecord[T](epsilon)
   def reduce(a: GKRecord[T], b: T): GKRecord[T] = a.insert(b)
   //def reduce(a: GKRecord[T], b: T): GKRecord[T] = a.insert(b)
   def merge(a: GKRecord[T], b: GKRecord[T]): GKRecord[T] = a.combine(b)
-  def finish(reduction: GKRecord[T]): T = reduction.query(quantile)
+  def finish(reduction: GKRecord[T]): Map[Double,T] = quantiles.map(
+    (q: Double) => (q -> reduction.query(q))
+  ).toMap
   // not sure if I'm doing this right.
   def bufferEncoder: Encoder[GKRecord[T]] = Encoders.kryo[GKRecord[T]]
-  def outputEncoder: Encoder[T] = implicitly[Encoder[T]]
+  def outputEncoder: Encoder[Map[Double,T]] = Encoders.kryo[Map[Double,T]]
 }
 
 // so, that was cool but it doesn't work with Python as far as I know beceause
@@ -47,18 +49,18 @@ class GKAggregator[T: Numeric: Encoder](
 // soooooo, let's see about this.
 
 class UntypedGKAggregator(
-  val quantile: Double,
+  val quantiles: Seq[Double],
   val epsilon: Double
 ) extends UserDefinedAggregateFunction {
   def deterministic: Boolean = false
-  def dataType: DataType = DoubleType
+  def dataType: DataType = MapType(DoubleType, DoubleType)
   def inputSchema: StructType = StructType(
     StructField("value", DoubleType, false) ::
     Nil
   )
 
   // equivalent to a GKEntry
-  val recordType: StructType = StructType(
+  val recordSchema: StructType = StructType(
     StructField("value", DoubleType, false) ::
     StructField("g", LongType, false) ::
     StructField("delta", LongType, false) ::
@@ -67,7 +69,7 @@ class UntypedGKAggregator(
   // this has to do everything GKRecord does, but do it with spark SQL
   // logic
   def bufferSchema: StructType = StructType(
-    StructField("sample", ArrayType(recordType)) ::
+    StructField("sample", ArrayType(recordSchema)) ::
     StructField("count", LongType) ::
     Nil
   )
@@ -77,11 +79,22 @@ class UntypedGKAggregator(
   }
 
 
-  def bufferToGKRecord(buffer: Row): GKRecord[Double] = {
+  /** Instead of actually rewriting this in Spark SQL, I'm just
+    * writing a wrapper that calls the code I've already written.
+    * I don't think this is likely to be the "right" way of doing this
+    * since I go from Arrays to GKRecords every single time, which I
+    * presume adds a lot of overhead. But this lets me reuse the code
+    * that I've already written.
+    */
+  // Turns the buffer into a typed record.
+  def bufferToGKRecord(
+    buffer: Row // This Row is of the "type" bufferSchema.
+  ): GKRecord[Double] = {
     val count: Long = buffer.getLong(1)
     val sample: Seq[GKEntry[Double]] = {
       val sampleAsList: Seq[Row] = buffer.getSeq[Row](0)
       sampleAsList.map(
+        // this Row is of "type" recordSchema
         (x: Row) => GKEntry(
           x.getDouble(0),
           x.getLong(1),
@@ -89,10 +102,16 @@ class UntypedGKAggregator(
         )
       )
     }
+    // I assume this is expensive, but I haven't checked.
     new GKRecord[Double](epsilon, sample.toList, count)
   }
+  // Turns a typed record back into the stuff that goes into a bufferSchema.
+  // This doesn't produce a Row/MutableAggregationBuffer since
+  // it seems to be customary to overwrite what's in the current one as a
+  // side-effect, so it just produces the stuff that would go into it.
   def gkRecordToBufferElements(r: GKRecord[Double]): (Array[Row], Long) = {
     val newSample: Array[Row] = r.sample.map(
+      // the Row produced here is of "type" recordSchema
       (x: GKEntry[Double]) => Row(
         x.v,
         x.g,
@@ -102,19 +121,20 @@ class UntypedGKAggregator(
     val count: Long = r.count
     (newSample, count)
   }
+  // buffer is of "type" bufferSchema
+  // input is of "type" inputSchema
   def update(buffer: MutableAggregationBuffer, input: Row): Unit = {
-    /*  I assume this this is absurdly inefficient but it avoids reusing code,
-      * so I'll start with this.
+    /** I assume this this is absurdly inefficient but it lets me reuse my
+      * existing code, so I'll start with this.
       */
     val newValue: Double = input.getDouble(0)
     val oldGKRecord: GKRecord[Double] = bufferToGKRecord(buffer)
-    val printTuple = (oldGKRecord.sample, oldGKRecord.count)
     val updatedGKRecord: GKRecord[Double] = oldGKRecord.insert(newValue)
-    val printTuple2 = (updatedGKRecord.sample, updatedGKRecord.count)
     val (s: Array[Row], c: Long) = gkRecordToBufferElements(updatedGKRecord)
     buffer(0) = s
     buffer(1) = c
   }
+  // buffer1 and buffer2 are both of "type" bufferSchema
   def merge(buffer1: MutableAggregationBuffer, buffer2: Row): Unit = {
     val gkRecord1: GKRecord[Double] = bufferToGKRecord(buffer1)
     val gkRecord2: GKRecord[Double] = bufferToGKRecord(buffer2)
@@ -123,9 +143,12 @@ class UntypedGKAggregator(
     buffer1(0) = s
     buffer1(1) = c
   }
-  def evaluate(buffer: Row): Double = {
+  // buffer is of "type" bufferSchema
+  def evaluate(buffer: Row): Map[Double, Double] = {
     val gkRecord: GKRecord[Double] = bufferToGKRecord(buffer)
-    gkRecord.query(quantile)
+    quantiles.map(
+      (q: Double) => (q -> gkRecord.query(q))
+    ).toMap
   }
 
 

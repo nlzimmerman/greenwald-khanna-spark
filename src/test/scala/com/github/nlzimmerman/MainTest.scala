@@ -4,6 +4,8 @@ import org.scalatest.{WordSpec, Ignore}
 import java.util.ArrayList
 import scala.collection.JavaConverters._
 import org.apache.spark.SparkContext._
+import org.apache.spark.rdd.RDD
+import org.apache.spark.sql.{SparkSession, Dataset, DataFrame}
 
 object TestParams {
   val targets: Seq[Double] = Seq(
@@ -239,7 +241,7 @@ class SparkSuite extends WordSpec {
       import Util._
       import NormalNumbers._
       import TestParams._
-      import org.apache.spark.rdd.RDD
+
       val n0: RDD[Double] = spark.
         sparkContext.
         parallelize(numbers)
@@ -302,4 +304,64 @@ class SparkSuite extends WordSpec {
       }
     }
   }
+}
+
+/** case class has to be defined outside of the class where toDS will be
+  * called or else the implicits won't work. IDGI
+  */
+
+case class LabeledNumber(name: String, value: Double)
+case class LabeledQuantile(name: String, quantile: Map[Double, Double])
+
+class SQLSuite extends WordSpec {
+  import org.apache.log4j.{Level, Logger}
+  Logger.getLogger("org.apache.spark").setLevel(Level.WARN)
+  Logger.getLogger("akka").setLevel(Level.WARN)
+  import Util._
+  import NormalNumbers._
+  import TestParams._
+  import org.apache.spark.SparkContext._
+  import spark.sqlContext.implicits._
+  "GKAggregator" should {
+
+    "be able to invert the normal distribution in Spark by Key" when {
+      val ds: Dataset[LabeledNumber] = {
+        numbers.map((x: Double) => LabeledNumber("a", x)).toDS.union(
+          numbers2.map((x: Double) => LabeledNumber("b", x)).toDS()
+        ).repartition(100)
+      }
+      def checker(epsilon: Double): Unit = {
+        val bounds: Seq[(Double, Double)] = inverseNormalCDFBounds(targets, epsilon)
+        val quantiles: Seq[LabeledQuantile] = {
+          val quantilizer: GKAggregator[Double] = new GKAggregator[Double](targets, 0.01)
+          val qTuple: Dataset[(String, Map[Double, Double])] = ds.
+              groupByKey(_.name).mapValues(_.value).
+              agg(quantilizer.toColumn.name("quantile"))
+          val q: Dataset[LabeledQuantile] = qTuple.map(LabeledQuantile.tupled(_))
+          q.collect
+        }
+        val keyedQuantiles: Map[String, Map[Double, Double]] = quantiles.map(
+          (x: LabeledQuantile) => x.name -> x.quantile
+        ).toMap
+        val aValues: Seq[Double] = targets.map(
+          (x: Double) => keyedQuantiles("a")(x)
+        )
+        val bValues: Seq[Double] = targets.map(
+          (x: Double) => keyedQuantiles("b")(x)
+        )
+        boundsCheck(aValues, bounds)
+        boundsCheck(bValues, bounds)
+      }
+      "epsilon = 0.005" in {
+        checker(0.005)
+      }
+      "epsilon = 0.01" in {
+        checker(0.01)
+      }
+      "epsilon = 0.05" in {
+        checker(0.05)
+      }
+    }
+  }
+
 }
