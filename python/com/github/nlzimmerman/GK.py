@@ -1,5 +1,8 @@
 from pyspark.sql import SparkSession
 from pyspark.mllib.common import _java2py, _py2java
+from pyspark.sql.column import Column, _to_java_column, _to_seq
+from pyspark.sql.functions import col
+
 import json
 
 # no longer a singleton because we have some unavoidable install-specific configuration
@@ -34,6 +37,42 @@ class GKQuantile(object):
     def scalaAdd(self, x, y):
         s = self.sparkSession.sparkContext._jvm.com.github.nlzimmerman.Python.add
         return s(self.py2java(x), self.py2java(y))
+
+    def getGroupedQuantilesSQL(
+        self,
+        df, # DF with some key column that responds to GroupBy
+           # and some value column that is numeric.
+        groupByColumn, # string containing the column to key by
+        aggregationColumn, # string containing the column to aggregate over.
+        outputColumnName = "quantiles",
+        quantiles = [0.5], # Python list containing the quantiles to compute
+        epsilon = 0.01
+    ):  # no force_type here because the Scala casts everything to Double whether you like it or not.
+        eps = self.py2java(epsilon)
+        q = self.py2java(quantiles)
+        # cribbed from
+        # http://www.cyanny.com/2017/09/15/spark-use-scala-udf-udaf-in-pyspark/
+        def gk(col):
+            # to cut down on verbiage
+            sc = self.sparkSession.sparkContext
+            # oof, let's see if this works
+            # update — it seems to! I was kind of guessing
+            ugk_instance = (
+                sc._jvm.com.github.nlzimmerman.UntypedGKAggregator(q, eps)
+            )
+            _untypedGKAggregator = ugk_instance.apply
+            return Column(
+                _untypedGKAggregator(
+                    _to_seq(
+                        sc,
+                        [col],
+                        _to_java_column
+                    )
+                )
+            )
+        return df.groupBy(col(groupByColumn)).agg(gk(col(aggregationColumn)).alias(outputColumnName))
+
+
 
     def getQuantiles(
         self,

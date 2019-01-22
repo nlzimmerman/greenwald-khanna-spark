@@ -388,7 +388,6 @@ class SQLSuite extends WordSpec {
         )
         boundsCheck(aValues, bounds)
         boundsCheck(bValues, bounds)
-
       }
       "epsilon = 0.005" in {
         checker(0.005)

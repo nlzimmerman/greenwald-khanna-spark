@@ -51,7 +51,24 @@ class GKAggregator[T: Numeric: Encoder](
 class UntypedGKAggregator(
   val quantiles: Seq[Double],
   val epsilon: Double
-) extends UserDefinedAggregateFunction {
+) extends UserDefinedAggregateFunction with Serializable {
+  // for python compatibility since py4j makes python lists into
+  // java.util.ArrayList
+  def this(
+    q: java.util.ArrayList[Double],
+    e: Double
+  ) = {
+    // https://stackoverflow.com/questions/35988315/convert-java-list-to-scala-seq
+    this(
+      {
+        import scala.collection.JavaConversions._
+        // leveraging implicits
+        val l: Seq[Double] = q
+        l
+      },
+      e
+    )
+  }
   def deterministic: Boolean = false
   def dataType: DataType = MapType(DoubleType, DoubleType)
   def inputSchema: StructType = StructType(

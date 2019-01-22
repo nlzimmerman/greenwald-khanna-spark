@@ -85,6 +85,41 @@ class BasicTest(unittest.TestCase):
                     lambda x, y: x and y
                 )
             )
+    def test_normal_groupBy_spark_sql(self):
+        '''using the spark SQL aggregator'''
+        n0 = self.g.sparkSession.sparkContext.parallelize(self.normal.numbers, 100).map(lambda x: ("a", x))
+        n1 = self.g.sparkSession.sparkContext.parallelize(self.normal.numbers2, 100).map(lambda x: ("b", x))
+        df = n0.union(n1).toDF(["name", "value"]).repartition(100)
+        for epsilon in [0.01]:
+            bounds = {
+                # quantile target: (lower bound, upper bound)
+                t: b for t, b in zip(
+                        self.targets,
+                        Util.inverseNormalCDFBounds(self.targets, epsilon)
+                    )
+            }
+            quantiles_df = self.g.getGroupedQuantilesSQL(
+                df,
+                "name",
+                "value",
+                "quantiles",
+                self.targets,
+                epsilon
+            )
+            quantiles_dict = quantiles_df.rdd.map(
+                lambda x: (x["name"], x["quantiles"])
+            ).collectAsMap()
+            for key in ["a", "b"]:
+                for target in self.targets:
+                    self.assertTrue(
+                        bounds[target][0] <= quantiles_dict[key][target]
+                    )
+                    self.assertTrue(
+                        quantiles_dict[key][target] <= bounds[target][1]
+                    )
+
+
+
     def test_int_groupBy_spark_simple(self):
         n0 = self.g.sparkSession.sparkContext.parallelize([0,1,2,3,4]).map(lambda x: ("foo", x))
         q = self.g.getGroupedQuantiles(n0, [0.5], 0.01, force_type = None)
