@@ -20,16 +20,16 @@ if __name__ == "__main__":
     logger.LogManager.getLogger("akka").setLevel( logger.Level.ERROR )
     a = sparkSession.sparkContext.parallelize(
         [
-            ("a",1.0),
-            ("a",2.0),
-            ("a",3.0),
-            ("a",4.0),
-            ("a",5.0),
-            ("b",6.0),
-            ("b",7.0),
-            ("b",8.0),
-            ("b",9.0),
-            ("b",10.0),
+            ("a",1),
+            ("a",2),
+            ("a",3),
+            ("a",4),
+            ("a",5),
+            ("b",6),
+            ("b",7),
+            ("b",8),
+            ("b",9),
+            ("b",10),
         ]
     ).toDF(["name", "value"])
     a.show()

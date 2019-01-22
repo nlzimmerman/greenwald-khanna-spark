@@ -79,28 +79,11 @@ class GKQuantile(object):
         quantiles = [0.5], # Python list containing the quantiles to compute
         epsilon = 0.01
     ):  # no force_type here because the Scala casts everything to Double whether you like it or not.
-        eps = self.py2java(epsilon)
-        q = self.py2java(quantiles)
-        # cribbed from
-        # http://www.cyanny.com/2017/09/15/spark-use-scala-udf-udaf-in-pyspark/
-        def gk(col):
-            # to cut down on verbiage
-            sc = self.sparkSession.sparkContext
-            # oof, let's see if this works
-            # update — it seems to! I was kind of guessing
-            ugk_instance = (
-                sc._jvm.com.github.nlzimmerman.UntypedGKAggregator(q, eps)
-            )
-            _untypedGKAggregator = ugk_instance.apply
-            return Column(
-                _untypedGKAggregator(
-                    _to_seq(
-                        sc,
-                        [col],
-                        _to_java_column
-                    )
-                )
-            )
+        gk = self.gk_agg(
+            self.sparkSession.sparkContext,
+            quantiles,
+            epsilon
+        )
         return df.groupBy(col(groupByColumn)).agg(gk(col(aggregationColumn)).alias(outputColumnName))
 
 
