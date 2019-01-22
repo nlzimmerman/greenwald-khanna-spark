@@ -24,7 +24,12 @@ if __name__ == "__main__":
             ("a",2.0),
             ("a",3.0),
             ("a",4.0),
-            ("a",5.0)
+            ("a",5.0),
+            ("b",6.0),
+            ("b",7.0),
+            ("b",8.0),
+            ("b",9.0),
+            ("b",10.0),
         ]
     ).toDF(["name", "value"])
     a.show()
@@ -37,3 +42,5 @@ if __name__ == "__main__":
     b.show()
     print(b.collect())
     print(b.rdd.map(lambda x: (x["name"], x["quantiles"])).collectAsMap())
+    quantilizer = GKQuantile.gk_agg(sparkSession.sparkContext, [0.5], 0.01)
+    print(a.groupBy().agg(quantilizer(col("value")).alias("q")).collect())

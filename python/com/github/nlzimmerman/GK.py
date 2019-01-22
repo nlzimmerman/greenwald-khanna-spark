@@ -38,6 +38,37 @@ class GKQuantile(object):
         s = self.sparkSession.sparkContext._jvm.com.github.nlzimmerman.Python.add
         return s(self.py2java(x), self.py2java(y))
 
+    # this method is for the use case where you have a spark SQL workflow
+    # in place, you use df.groupBy().agg() all the time, and you aren't
+    # interested in instantiating this class.
+    # This is the way I would tend to do it at work.
+    # This function returns a function that can be used with .agg()
+    @staticmethod
+    def gk_agg(
+        sc, # this is a SPARK CONTEXT, not a Spark Session,.
+            # we have to have the spark context so we can find the function
+            # on the JVM
+        quantiles, # quantiles to find,
+        epsilon, # precision
+    ):
+        q = _py2java(sc, quantiles)
+        e = _py2java(sc, epsilon)
+        def _gk(col):
+            UntypedGKAggregator_instance = (
+                sc._jvm.com.github.nlzimmerman.UntypedGKAggregator(q, e)
+            )
+            instance_applier = UntypedGKAggregator_instance.apply
+            return Column(
+                instance_applier(
+                    _to_seq(
+                        sc,
+                        [col],
+                        _to_java_column
+                    )
+                )
+            )
+        return _gk
+
     def getGroupedQuantilesSQL(
         self,
         df, # DF with some key column that responds to GroupBy
