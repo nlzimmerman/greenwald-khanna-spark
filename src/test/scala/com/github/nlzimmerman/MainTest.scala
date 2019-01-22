@@ -5,7 +5,7 @@ import java.util.ArrayList
 import scala.collection.JavaConverters._
 import org.apache.spark.SparkContext._
 import org.apache.spark.rdd.RDD
-import org.apache.spark.sql.{SparkSession, Dataset, DataFrame}
+import org.apache.spark.sql.{SparkSession, Dataset, DataFrame, Row}
 
 object TestParams {
   val targets: Seq[Double] = Seq(
@@ -333,7 +333,7 @@ class SQLSuite extends WordSpec {
       def checker(epsilon: Double): Unit = {
         val bounds: Seq[(Double, Double)] = inverseNormalCDFBounds(targets, epsilon)
         val quantiles: Seq[LabeledQuantile] = {
-          val quantilizer: GKAggregator[Double] = new GKAggregator[Double](targets, 0.01)
+          val quantilizer: GKAggregator[Double] = new GKAggregator[Double](targets, epsilon)
           val qTuple: Dataset[(String, Map[Double, Double])] = ds.
               groupByKey(_.name).mapValues(_.value).
               agg(quantilizer.toColumn.name("quantile"))
@@ -363,5 +363,44 @@ class SQLSuite extends WordSpec {
       }
     }
   }
+  "UntypedGKAggregator" should {
+    "be able to invert the normal distribution in Spark by Key" when {
+      val df: DataFrame = {
+        numbers.map((x: Double) => ("a", x)).union(
+          numbers2.map((x: Double) => ("b", x))
+        ).toDF("name", "value").repartition(100)
+      }
+      def checker(epsilon: Double): Unit = {
+        val bounds: Seq[(Double, Double)] = inverseNormalCDFBounds(targets, epsilon)
+        val keyedQuantiles: Map[String, Map[Double, Double]] = {
+          val quantilizer: UntypedGKAggregator = new UntypedGKAggregator(targets, epsilon)
+          val qFrame: DataFrame = df.groupBy($"name").agg(quantilizer($"value").alias("quantiles"))
+          val qRDD: RDD[(String, Map[Double, Double])] = qFrame.rdd.map(
+            (x: Row) => (x.getString(0), x.getAs[Map[Double, Double]](1))
+          )
+          qRDD.collectAsMap.toMap
+        }
+        val aValues: Seq[Double] = targets.map(
+          (x: Double) => keyedQuantiles("a")(x)
+        )
+        val bValues: Seq[Double] = targets.map(
+          (x: Double) => keyedQuantiles("b")(x)
+        )
+        boundsCheck(aValues, bounds)
+        boundsCheck(bValues, bounds)
+
+      }
+      "epsilon = 0.005" in {
+        checker(0.005)
+      }
+      "epsilon = 0.01" in {
+        checker(0.01)
+      }
+      "epsilon = 0.05" in {
+        checker(0.05)
+      }
+    }
+  }
+
 
 }
