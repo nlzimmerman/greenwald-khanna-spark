@@ -322,9 +322,8 @@ class GKRecord[T](
         these should really do the exact same thing.
     */
     val desiredRank: Long = math.max(math.round(quantile * (count)).toLong, 1L)
-    val rankEpsilon: Double = math.ceil(epsilon * count)
-    println(desiredRank)
-    println(rankEpsilon)
+    // I had a ceiling function around this and I think that was wrong.
+    val rankEpsilon: Double = epsilon * count
     // the tail is to drop the leading 0 added by scanLeft
     // scanLeft takes the cumulative sum (at least it does
     // does when the combine op is addition :)
