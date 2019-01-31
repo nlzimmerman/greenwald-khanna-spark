@@ -141,8 +141,8 @@ object Main extends App {
   )(
     (x: GKRecord[Double], y: Double) => x.insert(y)
   )
-  println(test.sample)
-  println(test.count)
+  //println(test.sample)
+  println(test.sample.length)
   println(test.query(0.05))
 
 
