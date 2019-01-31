@@ -28,66 +28,69 @@ object GKQuantile {
     quantiles.map((q: Double) => d.query(q))
   }
 
-  def getQuantiles[T](
-    x: RDD[T],
-    quantiles: Seq[Double],
-    epsilon: Double
-  )(implicit num: Numeric[T]): Seq[T] = {
-    import num._
-    val d: GKRecord[T] = x.treeAggregate(
-      new GKRecord[T](epsilon)
-    )(
-      (a: GKRecord[T], b: T) => a.insert(b),
-      (a: GKRecord[T], b: GKRecord[T]) => a.combine(b)
-    )
-    quantiles.map((q: Double) => d.query(q))
-  }
-  // for python compatibility
-  def _getQuantilesInt(
-    x: JavaRDD[Int],
-    quantiles: ArrayList[Double],
-    epsilon: Double
-  ): Array[Int] = getQuantiles(x, quantiles.toSeq, epsilon).toArray
-
-  def _getQuantilesDouble(
-    x: JavaRDD[Double],
-    quantiles: ArrayList[Double],
-    epsilon: Double
-  ): Array[Double] = getQuantiles(x, quantiles.toSeq, epsilon).toArray
-
-
-  def getGroupedQuantiles[U:ClassTag, T: ClassTag](
-    r: RDD[(U, T)],
-    quantiles: Seq[Double],
-    epsilon: Double = 0.01
-  )(implicit num: Numeric[T]): RDD[((U, Double), T)] = {
-    import num._
-    // this makes conversion to and from PairRDDFunctions automatic
-    import org.apache.spark.SparkContext._
-    //val p: PairRDDFunctions[U, T] = new PairRDDFunctions[U, T](r)
-    val p: PairRDDFunctions[U, T] = r
-    val aggregated: PairRDDFunctions[U, GKRecord[T]] = p.aggregateByKey[GKRecord[T]](
-      new GKRecord[T](epsilon)
-    )(
-      (g: GKRecord[T], v: T) => {
-        g.insert(v)
-      }: GKRecord[T],
-      (a: GKRecord[T], b: GKRecord[T]) => { a.combine(b) }: GKRecord[T]
-    )
-    //val staged: RDD[((U, Double), T)] =
-    aggregated.flatMapValues(
-      (a: GKRecord[T]) => {
-        quantiles.map(
-          (q: Double) => (q, a.query(q))
-        )
-      }: Seq[(Double, T)]
-    ).map(
-      // shifts from (key, (quantile, value)) to
-      // ((key, quantile), value)
-      (x: (U, (Double, T))) => ((x._1, x._2._1), x._2._2)
-    )
-    //new PairRDDFunctions[(U, Double), T](staged)
-  }
+  // def getQuantiles[T](
+  //   x: RDD[T],
+  //   quantiles: Seq[Double],
+  //   epsilon: Double
+  // )(implicit num: Numeric[T]): Seq[T] = {
+  //   import num._
+  //   val d: GKRecord[T] = x.treeAggregate(
+  //     new GKRecord[T](epsilon)
+  //   )(
+  //     (a: GKRecord[T], b: T) => a.insert(b),
+  //     (a: GKRecord[T], b: GKRecord[T]) => a.combine(b)
+  //   )
+  //   quantiles.map((q: Double) => d.query(q))
+  // }
+  //
+  // // for python compatibility
+  // def _getQuantilesInt(
+  //   x: JavaRDD[Int],
+  //   quantiles: ArrayList[Double],
+  //   epsilon: Double
+  // ): Array[Int] = getQuantiles(x, quantiles.toSeq, epsilon).toArray
+  //
+  // def _getQuantilesDouble(
+  //   x: JavaRDD[Double],
+  //   quantiles: ArrayList[Double],
+  //   epsilon: Double
+  // ): Array[Double] = getQuantiles(x, quantiles.toSeq, epsilon).toArray
+  //
+  //
+  // def getGroupedQuantiles[U:ClassTag, T: ClassTag](
+  //   r: RDD[(U, T)],
+  //   quantiles: Seq[Double],
+  //   epsilon: Double = 0.01
+  // )(implicit num: Numeric[T]): RDD[((U, Double), T)] = {
+  //   import num._
+  //   // this makes conversion to and from PairRDDFunctions automatic
+  //   import org.apache.spark.SparkContext._
+  //   //val p: PairRDDFunctions[U, T] = new PairRDDFunctions[U, T](r)
+  //   val p: PairRDDFunctions[U, T] = r
+  //   val aggregated: PairRDDFunctions[U, GKRecord[T]] = p.aggregateByKey[GKRecord[T]](
+  //     new GKRecord[T](epsilon)
+  //   )(
+  //     (g: GKRecord[T], v: T) => {
+  //       g.insert(v)
+  //     }: GKRecord[T],
+  //     (a: GKRecord[T], b: GKRecord[T]) => { a.combine(b) }: GKRecord[T]
+  //   )
+  //   //val staged: RDD[((U, Double), T)] =
+  //   aggregated.flatMapValues(
+  //     (a: GKRecord[T]) => {
+  //       quantiles.map(
+  //         (q: Double) => (q, a.query(q))
+  //       )
+  //     }: Seq[(Double, T)]
+  //   ).map(
+  //     // shifts from (key, (quantile, value)) to
+  //     // ((key, quantile), value)
+  //     (x: (U, (Double, T))) => ((x._1, x._2._1), x._2._2)
+  //   )
+  //   //new PairRDDFunctions[(U, Double), T](staged)
+  // }
+  //
+  //
   /* Python compatibility to the above */
   /*  this is called by _PyGetGroupedQuantilesStringDouble and _PyGetGroupedQuantilesStringInt
     * it's private just so I don't forget what it's here for. :)
@@ -123,44 +126,45 @@ object GKQuantile {
       */
     calculatedArrays.toJavaRDD
   }
-  def _PyGetGroupedQuantilesDouble(
-    r: JavaRDD[Any], // needs to be a Python RDD of (string, float)
-                     // we will do type coercion to make this the case
-                     // and that will give a runtime error if that's not the case.
-    quantiles: ArrayList[Double], // this is a Python list of float
-    epsilon: Double = 0.01        // just a python float
-  ): JavaRDD[Array[Any]] = { // this is ((String, Double), Double) but with both tuples converted to Arrays.
-    /*
-    * this takes advantage of the implicits imported at the top of the file.
-    * there may be a more parsimonious way of writing this but I don't think this
-    * way is slower.
-    *
-    * Also, this might be a little bit dangerous: I'm not inspecting the type of the key
-    * at ALL: it stays Any all the way through. I haven't read up on whether this is
-    * safe with reduceByKey or not.
-    */
-    // JavaRDD[Any] to RDD[Any]
-    val rScala: RDD[(Any, Double)] = pyToTuple2(r)
-    // now we have the types straight so we can actually do the grouped quantiles.
-    val calculated: RDD[((Any, Double), Double)] = getGroupedQuantiles(
-      rScala, quantiles, epsilon
-    )
-    // and now we need to get that back into something that py4j can handle.
-    // which, again, is nested Arrays.
-    groupedQuantilesToPython(calculated)
-  }
-
-  def _PyGetGroupedQuantilesInt(
-    r: JavaRDD[Any],
-    quantiles: ArrayList[Double],
-    epsilon: Double = 0.01
-  ): JavaRDD[Array[Any]] = {
-    val rScala: RDD[(Any, Int)] = pyToTuple2(r)
-    val calculated: RDD[((Any, Double), Int)]= getGroupedQuantiles(
-      rScala, quantiles, epsilon
-    )
-    groupedQuantilesToPython(calculated)
-  }
+  // def _PyGetGroupedQuantilesDouble(
+  //   r: JavaRDD[Any], // needs to be a Python RDD of (string, float)
+  //                    // we will do type coercion to make this the case
+  //                    // and that will give a runtime error if that's not the case.
+  //   quantiles: ArrayList[Double], // this is a Python list of float
+  //   epsilon: Double = 0.01        // just a python float
+  // ): JavaRDD[Array[Any]] = { // this is ((String, Double), Double) but with both tuples converted to Arrays.
+  //   /*
+  //   * this takes advantage of the implicits imported at the top of the file.
+  //   * there may be a more parsimonious way of writing this but I don't think this
+  //   * way is slower.
+  //   *
+  //   * Also, this might be a little bit dangerous: I'm not inspecting the type of the key
+  //   * at ALL: it stays Any all the way through. I haven't read up on whether this is
+  //   * safe with reduceByKey or not.
+  //   */
+  //   // JavaRDD[Any] to RDD[Any]
+  //   val rScala: RDD[(Any, Double)] = pyToTuple2(r)
+  //   // now we have the types straight so we can actually do the grouped quantiles.
+  //   val calculated: RDD[((Any, Double), Double)] = getGroupedQuantiles(
+  //     rScala, quantiles, epsilon
+  //   )
+  //   // and now we need to get that back into something that py4j can handle.
+  //   // which, again, is nested Arrays.
+  //   groupedQuantilesToPython(calculated)
+  // }
+  //
+  // def _PyGetGroupedQuantilesInt(
+  //   r: JavaRDD[Any],
+  //   quantiles: ArrayList[Double],
+  //   epsilon: Double = 0.01
+  // ): JavaRDD[Array[Any]] = {
+  //   val rScala: RDD[(Any, Int)] = pyToTuple2(r)
+  //   val calculated: RDD[((Any, Double), Int)]= getGroupedQuantiles(
+  //     rScala, quantiles, epsilon
+  //   )
+  //   groupedQuantilesToPython(calculated)
+  // }
+  //
 }
 
 
@@ -184,7 +188,7 @@ class GKRecord[T](
   val compressThreshold: Long = (1.0/(2.0*epsilon)).toLong
 
   /* defs for listInsert and listReplace were moved to the package object! */
-  
+
   def insert(v: T): GKRecord[T] = {
     val newSample: List[GKEntry[T]] = {
       if (
@@ -262,14 +266,18 @@ class GKRecord[T](
     ): List[GKEntry[T]] = {
       if (remainder.isEmpty) {
         acc :+ previous
-      } else if (isEqual(previous, remainder.head)) {
+      } /*
+      else if (isEqual(previous, remainder.head)) {
+        println("isEqual")
         collapse(
           combineEquals(previous, remainder.head),
           remainder.tail,
           acc,
           carryOver + remainder.head.g
         )
-      } else if (isCombinable(previous, remainder.head)) {
+
+      }*/ 
+      else if (isCombinable(previous, remainder.head)) {
         collapse(
           combine(previous, remainder.head, carryOver),
           remainder.tail,
@@ -354,6 +362,7 @@ class GKRecord[T](
     }
     (new GKRecord[T](epsilon, out, count))
   }
+
   def query(quantile: Double): T = {
     /*  Ranks run from 1 to count and NOT from 0 to count-1
         An alternative construction of desiredRank would be
@@ -364,7 +373,7 @@ class GKRecord[T](
         these should really do the exact same thing.
     */
     val desiredRank: Long = math.max(math.round(quantile * (count)).toLong, 1L)
-    val rankEpsilon: Double = epsilon * count
+    val rankEpsilon: Double = math.ceil(epsilon * count)
     // the tail is to drop the leading 0 added by scanLeft
     // scanLeft takes the cumulative sum (at least it does
     // does when the combine op is addition :)
@@ -374,75 +383,78 @@ class GKRecord[T](
     })
     val idx: Int = startingRanks.zip(endingRanks).indexWhere({
       case (startingRank: Long, endingRank: Long) => (
-        (desiredRank-startingRank) < rankEpsilon &&
-        (endingRank-desiredRank) < rankEpsilon
+        (desiredRank-startingRank) <= rankEpsilon &&
+        (endingRank-desiredRank) <= rankEpsilon
       )
     })
     // if nothing matches, we have a problem.
-    require(idx >= 0)
+    if (idx < 0) {
+      throw new Exception(s"Could not find desiredRank $desiredRank quantile $quantile count $count given rankEpsilon $rankEpsilon, for startingRanks $startingRanks, endingRank $endingRanks")
+    }
     sample(idx).v
   }
 
-  def combine(that: GKRecord[T]): GKRecord[T] = {
-    if (this.sample.length == 0) that
-    else if (that.sample.length == 0) this
-    else {
-      // exploiting the fact that GKEntries are case classes
-      // so I can use them as keys in a Map
-      // this is a LOT better than that Python version I wrote! (if it works)
-      // we need to keep track of the next entry in the other list
-      // so we can recalculate delta on an entry-by-entry basis.
-      // I include the this's here just so I can keep track of what I'm doing.
-      val otherNext: Map[GKEntry[T], Option[GKEntry[T]]] =
-        this.sample.map(
-          (x: GKEntry[T]) => (x -> that.sample.find((y) => y.v > x.v))
-        ).toMap ++
-        that.sample.map(
-          (x: GKEntry[T]) => (x -> this.sample.find((y) => y.v > x.v))
-        ).toMap
-      val combined: List[GKEntry[T]] = (sample ::: that.sample).sortBy(_.v)
-      val out: List[GKEntry[T]] = combined.map(
-        (x: GKEntry[T]) => otherNext(x) match {
-          case None => x
-          case Some(otherNext) => {
-            val newDelta: Long = x.delta + otherNext.delta + otherNext.g -1
-            x.copy(delta=newDelta)
-          }
-        }
-      )
+  // def combine(that: GKRecord[T]): GKRecord[T] = {
+  //   if (this.sample.length == 0) that
+  //   else if (that.sample.length == 0) this
+  //   else {
+  //     // exploiting the fact that GKEntries are case classes
+  //     // so I can use them as keys in a Map
+  //     // this is a LOT better than that Python version I wrote! (if it works)
+  //     // we need to keep track of the next entry in the other list
+  //     // so we can recalculate delta on an entry-by-entry basis.
+  //     // I include the this's here just so I can keep track of what I'm doing.
+  //     val otherNext: Map[GKEntry[T], Option[GKEntry[T]]] =
+  //       this.sample.map(
+  //         (x: GKEntry[T]) => (x -> that.sample.find((y) => y.v > x.v))
+  //       ).toMap ++
+  //       that.sample.map(
+  //         (x: GKEntry[T]) => (x -> this.sample.find((y) => y.v > x.v))
+  //       ).toMap
+  //     val combined: List[GKEntry[T]] = (sample ::: that.sample).sortBy(_.v)
+  //     val out: List[GKEntry[T]] = combined.map(
+  //       (x: GKEntry[T]) => otherNext(x) match {
+  //         case None => x
+  //         case Some(otherNext) => {
+  //           val newDelta: Long = x.delta + otherNext.delta + otherNext.g -1
+  //           x.copy(delta=newDelta)
+  //         }
+  //       }
+  //     )
+  //
+  //     val newEpsilon: Double = math.max(epsilon, that.epsilon)
+  //     val countIncrease: Long = math.min(count, that.count)
+  //     val newCount: Long = count + that.count
+  //     val toReturn: GKRecord[T] = new GKRecord[T](
+  //       newEpsilon,
+  //       out.toList,
+  //       newCount
+  //     )
+  //     /* The old test was
+  //     if (countIncrease >= math.floor(1.0/(2.0*newEpsilon)))
+  //        Which I think is in some sense in that it's
+  //        too conservative about when to compress.
+  //        In principle, we compress every time the count is a multiple of
+  //        1/(2*epsilon) — say, every time the count is a multiple of 50.
+  //        This compresses when the count grows by 50, but, for example,
+  //        It would miss the case where the old count is 48 and the new count is
+  //        51.
+  //
+  //        This new check attempts to see whether we've crossed over a threshold
+  //        by seeing how many times we ought to have compressed before combining records
+  //        and comparing it to how many times we ought to have compressed after it.
+  //     */
+  //     // these are Longs so it's floor division, which is what we want.
+  //     val newCompressionThreshold: Long = (1.0/(2.0*newEpsilon)).toLong
+  //     if (
+  //       countIncrease/newCompressionThreshold !=
+  //       newCount/newCompressionThreshold
+  //     ) {
+  //       toReturn.compress
+  //     } else {
+  //       toReturn
+  //     }
+  //   }
+  // }
 
-      val newEpsilon: Double = math.max(epsilon, that.epsilon)
-      val countIncrease: Long = math.min(count, that.count)
-      val newCount: Long = count + that.count
-      val toReturn: GKRecord[T] = new GKRecord[T](
-        newEpsilon,
-        out.toList,
-        newCount
-      )
-      /* The old test was
-      if (countIncrease >= math.floor(1.0/(2.0*newEpsilon)))
-         Which I think is in some sense in that it's
-         too conservative about when to compress.
-         In principle, we compress every time the count is a multiple of
-         1/(2*epsilon) — say, every time the count is a multiple of 50.
-         This compresses when the count grows by 50, but, for example,
-         It would miss the case where the old count is 48 and the new count is
-         51.
-
-         This new check attempts to see whether we've crossed over a threshold
-         by seeing how many times we ought to have compressed before combining records
-         and comparing it to how many times we ought to have compressed after it.
-      */
-      // these are Longs so it's floor division, which is what we want.
-      val newCompressionThreshold: Long = (1.0/(2.0*newEpsilon)).toLong
-      if (
-        countIncrease/newCompressionThreshold !=
-        newCount/newCompressionThreshold
-      ) {
-        toReturn.compress
-      } else {
-        toReturn
-      }
-    }
-  }
 }
