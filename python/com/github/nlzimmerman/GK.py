@@ -101,17 +101,17 @@ class GKQuantile(object):
         if force_type is None:
             inferred_type = type(x.first())
             if inferred_type is float:
-                gq = self.sparkSession.sparkContext._jvm.com.github.nlzimmerman.GKQuantile._getQuantilesDouble
+                gq = self.sparkSession.sparkContext._jvm.com.github.nlzimmerman.GKQuantile._PyGetQuantilesDouble
             elif inferred_type is int:
-                gq = self.sparkSession.sparkContext._jvm.com.github.nlzimmerman.GKQuantile._getQuantilesInt
+                gq = self.sparkSession.sparkContext._jvm.com.github.nlzimmerman.GKQuantile._PyGetQuantilesInt
             else:
                 raise Exception("couldn't figure out what to do with type {}".format(inferred_type))
             x = self.py2java(x)
         elif force_type is int:
-            gq = self.sparkSession.sparkContext._jvm.com.github.nlzimmerman.GKQuantile._getQuantilesInt
+            gq = self.sparkSession.sparkContext._jvm.com.github.nlzimmerman.GKQuantile._PyGetQuantilesInt
             x = self.py2java(x.map(lambda y: int(y)))
         elif force_type is float: # force_type is float, beccause we've already
-            gq = self.sparkSession.sparkContext._jvm.com.github.nlzimmerman.GKQuantile._getQuantilesDouble
+            gq = self.sparkSession.sparkContext._jvm.com.github.nlzimmerman.GKQuantile._PyGetQuantilesDouble
             x = self.py2java(x.map(lambda y: float(y)))
         else:
             raise Exception("We can either force everything to be a float, an int, or do basic type inspection.")

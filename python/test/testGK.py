@@ -3,6 +3,7 @@ from com.github.nlzimmerman.GK import *
 from scipy.special import erf, erfinv
 from math import log, sin, cos, pi, pow
 from pyspark.sql import SparkSession
+from functools import reduce
 import random
 
 class BasicTest(unittest.TestCase):
@@ -62,26 +63,31 @@ class BasicTest(unittest.TestCase):
             quantiles = self.g.getGroupedQuantiles(nr, self.targets, epsilon, force_type = None)
             # I'm going to do the check in Spark instead of with a collect, just for fun.
             bounds_list = [
-                ((key, t), b)
-                    for t, b in zip(self.targets, bounds)
+                (key, {t: b for t, b in zip(self.targets, bounds)})
                     for key in ("a", "b")
             ]
             bounds_rdd = self.g.sparkSession.sparkContext.parallelize(bounds_list)
+            # this takes as input a tuple,
+            # with item 0 as the bounds (as a dict (quantile -> (lower, upper)))
+            # and item 1 as the value (quantile -> value)
+            # it checks that the value is between lower and upper for all quantiles.
+            # it's a generator so use it with a flatMap 
             def checker(v):
-                lower_bound = v[0][0]
-                upper_bound = v[0][1]
-                value = v[1]
-                return (
-                    (lower_bound <= value) and
-                    (value <= upper_bound)
-                )
+                for quantile in v[0].keys():
+                    lower_bound = v[0][quantile][0]
+                    upper_bound = v[0][quantile][1]
+                    value = v[1][quantile]
+                    yield (
+                        (lower_bound <= value) and
+                        (value <= upper_bound)
+                    )
             # this check is too clever since it won't tell you
             # which of the bounds fails. But I did do a more thorough check
             # in the Scala unit tests.
             self.assertTrue(
                 bounds_rdd.join(
                     quantiles
-                ).mapValues(checker).values().reduce(
+                ).flatMapValues(checker).values().reduce(
                     lambda x, y: x and y
                 )
             )
@@ -123,7 +129,7 @@ class BasicTest(unittest.TestCase):
     def test_int_groupBy_spark_simple(self):
         n0 = self.g.sparkSession.sparkContext.parallelize([0,1,2,3,4]).map(lambda x: ("foo", x))
         q = self.g.getGroupedQuantiles(n0, [0.5], 0.01, force_type = None)
-        x = q.collect()[0][1]
+        x = q.collectAsMap()["foo"][0.5]
         self.assertEqual(x, 2)
         self.assertTrue(type(x) is int)
 

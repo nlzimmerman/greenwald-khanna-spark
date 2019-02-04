@@ -43,25 +43,31 @@ object GKQuantile {
     quantiles.map((q: Double) => d.query(q))
   }
 
-  // for python compatibility
-  def _getQuantilesInt(
+  /** The python function getQuantiles calls these two functions
+    */
+  def _PyGetQuantilesInt(
     x: JavaRDD[Int],
     quantiles: ArrayList[Double],
     epsilon: Double
   ): Array[Int] = getQuantiles(x, quantiles.toSeq, epsilon).toArray
 
-  def _getQuantilesDouble(
+  def _PyGetQuantilesDouble(
     x: JavaRDD[Double],
     quantiles: ArrayList[Double],
     epsilon: Double
   ): Array[Double] = getQuantiles(x, quantiles.toSeq, epsilon).toArray
 
-
+  /** I changed the output of this function as I was getting ready for 1.0
+    * Formerly, it returned an RDD[((U, Double), T)], i.e.
+    * ((key, quantile), value)
+    * since (quantile, value) tuples should be very small, I'm moving this over
+    * to being a map.
+    */
   def getGroupedQuantiles[U:ClassTag, T: ClassTag](
     r: RDD[(U, T)],
     quantiles: Seq[Double],
     epsilon: Double = 0.01
-  )(implicit num: Numeric[T]): RDD[((U, Double), T)] = {
+  )(implicit num: Numeric[T]): RDD[(U, Map[Double, T])] = {
     import num._
     // this makes conversion to and from PairRDDFunctions automatic
     import org.apache.spark.SparkContext._
@@ -75,19 +81,13 @@ object GKQuantile {
       }: GKRecord[T],
       (a: GKRecord[T], b: GKRecord[T]) => { a.combine(b) }: GKRecord[T]
     )
-    //val staged: RDD[((U, Double), T)] =
-    aggregated.flatMapValues(
+    aggregated.mapValues(
       (a: GKRecord[T]) => {
         quantiles.map(
-          (q: Double) => (q, a.query(q))
-        )
-      }: Seq[(Double, T)]
-    ).map(
-      // shifts from (key, (quantile, value)) to
-      // ((key, quantile), value)
-      (x: (U, (Double, T))) => ((x._1, x._2._1), x._2._2)
+          (q: Double) => (q -> a.query(q))
+        ).toMap
+      }
     )
-    //new PairRDDFunctions[(U, Double), T](staged)
   }
 
 
@@ -115,12 +115,21 @@ object GKQuantile {
     )
     asRDDTuple
   }
-  private def groupedQuantilesToPython[T](x: RDD[((Any, Double), T)]): JavaRDD[Array[Any]] = {
+  private def groupedQuantilesToPython[T](x: RDD[(Any, Map[Double,T])]): JavaRDD[Array[Any]] = {
+    val calculatedArrays: RDD[Array[Any]] = x.map(
+      (y: (Any, Map[Double, T])) => {
+        // this leverages the JavaConverters import
+        val y2: java.util.Map[Double, T] = y._2
+        Array(y._1, y2)
+      }
+    )
+    /*
     val calculatedArrays: RDD[Array[Any]] = x.map(
       (y: ((Any, Double), T)) => {
         Array(Array(y._1._1, y._1._2), y._2)
       }
     )
+    */
     /*  this also takes advantage of one of the implicits we imported at the top
       * of the file.
       */
@@ -145,7 +154,7 @@ object GKQuantile {
     // JavaRDD[Any] to RDD[Any]
     val rScala: RDD[(Any, Double)] = pyToTuple2(r)
     // now we have the types straight so we can actually do the grouped quantiles.
-    val calculated: RDD[((Any, Double), Double)] = getGroupedQuantiles(
+    val calculated: RDD[(Any, Map[Double,Double])] = getGroupedQuantiles(
       rScala, quantiles, epsilon
     )
     // and now we need to get that back into something that py4j can handle.
@@ -159,7 +168,7 @@ object GKQuantile {
     epsilon: Double = 0.01
   ): JavaRDD[Array[Any]] = {
     val rScala: RDD[(Any, Int)] = pyToTuple2(r)
-    val calculated: RDD[((Any, Double), Int)]= getGroupedQuantiles(
+    val calculated: RDD[(Any, Map[Double,Int])]= getGroupedQuantiles(
       rScala, quantiles, epsilon
     )
     groupedQuantilesToPython(calculated)

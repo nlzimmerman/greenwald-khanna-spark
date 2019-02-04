@@ -231,14 +231,14 @@ class SparkSuite extends WordSpec {
       def gkCheckSpark(epsilon: Double): Unit = {
         val bounds: Seq[(Double, Double)] = inverseNormalCDFBounds(targets, epsilon)
         // this is a hack to make sure that getGroupedQuantilesDouble works. I need to spin it out into its own test soon!!
-        val quantiles: Map[(String, Double), Double] =
+        val quantiles: Map[String, Map[Double,Double]] =
           {
             {
               GKQuantile.getGroupedQuantiles(nr, targets, epsilon)
-            }: RDD[((String, Double), Double)]
+            }: RDD[(String, Map[Double, Double])]
           }.collectAsMap.toMap
-        val aValues: Seq[Double] = targets.map((x: Double) => quantiles(("a", x)))
-        val bValues: Seq[Double] = targets.map((x: Double) => quantiles(("b", x)))
+        val aValues: Seq[Double] = targets.map((x: Double) => quantiles("a")(x))
+        val bValues: Seq[Double] = targets.map((x: Double) => quantiles("b")(x))
         boundsCheck(aValues, bounds)
         boundsCheck(bValues, bounds)
       }
