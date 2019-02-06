@@ -6,6 +6,7 @@ import org.apache.spark.SparkContext._
 
 import scala.annotation.tailrec
 
+
 object GKQuantile {
   import org.apache.spark.SparkContext._
   import org.apache.spark.rdd.RDD
@@ -161,7 +162,6 @@ object GKQuantile {
     // which, again, is nested Arrays.
     groupedQuantilesToPython(calculated)
   }
-
   def _PyGetGroupedQuantilesInt(
     r: JavaRDD[Any],
     quantiles: ArrayList[Double],

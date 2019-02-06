@@ -3,6 +3,7 @@ from com.github.nlzimmerman.GK import *
 from scipy.special import erf, erfinv
 from math import log, sin, cos, pi, pow
 from pyspark.sql import SparkSession
+from pyspark.sql.functions import col
 from functools import reduce
 import random
 
@@ -28,6 +29,9 @@ class BasicTest(unittest.TestCase):
             0.82,
             0.95
         ]
+        n0 = self.g.sparkSession.sparkContext.parallelize(self.normal.numbers, 100).map(lambda x: ("a", x))
+        n1 = self.g.sparkSession.sparkContext.parallelize(self.normal.numbers2, 100).map(lambda x: ("b", x))
+        self.labeled_normal_numbers = n0.union(n1).toDF(["name", "value"]).repartition(100).cache()
     def test_sanity(self):
         self.assertEqual(self.a.count(), 5)
     def test_quantile_float_simple(self):
@@ -54,13 +58,15 @@ class BasicTest(unittest.TestCase):
                 self.assertTrue(b[0] <= x)
                 self.assertTrue(x <= b[1])
     def test_normal_groupBy_spark(self):
-        ''' inversion by key '''
-        n0 = self.g.sparkSession.sparkContext.parallelize(self.normal.numbers, 100).map(lambda x: ("a", x))
-        n1 = self.g.sparkSession.sparkContext.parallelize(self.normal.numbers2, 100).map(lambda x: ("b", x))
-        nr = n0.union(n1).repartition(100)
+        ''' inversion by key, NOT using Spark '''
         for epsilon in [0.005, 0.01, 0.05]:
             bounds = Util.inverseNormalCDFBounds(self.targets, epsilon)
-            quantiles = self.g.getGroupedQuantiles(nr, self.targets, epsilon, force_type = None)
+            quantiles = self.g.getGroupedQuantiles(
+                self.labeled_normal_numbers.rdd.map(lambda x: (x['name'], x['value'])),
+                self.targets,
+                epsilon,
+                force_type = None
+                )
             # I'm going to do the check in Spark instead of with a collect, just for fun.
             bounds_list = [
                 (key, {t: b for t, b in zip(self.targets, bounds)})
@@ -71,7 +77,7 @@ class BasicTest(unittest.TestCase):
             # with item 0 as the bounds (as a dict (quantile -> (lower, upper)))
             # and item 1 as the value (quantile -> value)
             # it checks that the value is between lower and upper for all quantiles.
-            # it's a generator so use it with a flatMap 
+            # it's a generator so use it with a flatMap
             def checker(v):
                 for quantile in v[0].keys():
                     lower_bound = v[0][quantile][0]
@@ -93,9 +99,6 @@ class BasicTest(unittest.TestCase):
             )
     def test_normal_groupBy_spark_sql(self):
         '''using the spark SQL aggregator'''
-        n0 = self.g.sparkSession.sparkContext.parallelize(self.normal.numbers, 100).map(lambda x: ("a", x))
-        n1 = self.g.sparkSession.sparkContext.parallelize(self.normal.numbers2, 100).map(lambda x: ("b", x))
-        df = n0.union(n1).toDF(["name", "value"]).repartition(100)
         for epsilon in [0.01]:
             bounds = {
                 # quantile target: (lower bound, upper bound)
@@ -105,7 +108,7 @@ class BasicTest(unittest.TestCase):
                     )
             }
             quantiles_df = self.g.getGroupedQuantilesSQL(
-                df,
+                self.labeled_normal_numbers,
                 "name",
                 "value",
                 "quantiles",
@@ -123,6 +126,50 @@ class BasicTest(unittest.TestCase):
                     self.assertTrue(
                         quantiles_dict[key][target] <= bounds[target][1]
                     )
+    def test_gk_agg(self):
+        '''using gk_agg at epsilon=0.01'''
+        gk = self.g.gk_agg(self.sparkSession.sparkContext, self.targets, 0.01)
+        quantiles_df = self.labeled_normal_numbers.groupBy(col("name")).agg(gk(col("value")).alias("quantiles"))
+        quantiles_dict = quantiles_df.rdd.map(
+            lambda x: (x["name"], x["quantiles"])
+        ).collectAsMap()
+        bounds = {
+            # quantile target: (lower bound, upper bound)
+            t: b for t, b in zip(
+                    self.targets,
+                    Util.inverseNormalCDFBounds(self.targets, 0.01)
+                )
+        }
+        for key in ["a", "b"]:
+            for target in self.targets:
+                self.assertTrue(
+                    bounds[target][0] <= quantiles_dict[key][target]
+                )
+                self.assertTrue(
+                    quantiles_dict[key][target] <= bounds[target][1]
+                )
+    def test_approximateQuantile(self):
+        '''using gk_agg at epsilon=0.01'''
+        aq = self.g.approximateQuantile(self.targets, 0.01)
+        quantiles_df = self.labeled_normal_numbers.groupBy(col("name")).agg(aq(col("value")).alias("quantiles"))
+        quantiles_dict = quantiles_df.rdd.map(
+            lambda x: (x["name"], x["quantiles"])
+        ).collectAsMap()
+        bounds = {
+            # quantile target: (lower bound, upper bound)
+            t: b for t, b in zip(
+                    self.targets,
+                    Util.inverseNormalCDFBounds(self.targets, 0.01)
+                )
+        }
+        for key in ["a", "b"]:
+            for target in self.targets:
+                self.assertTrue(
+                    bounds[target][0] <= quantiles_dict[key][target]
+                )
+                self.assertTrue(
+                    quantiles_dict[key][target] <= bounds[target][1]
+                )
 
 
 

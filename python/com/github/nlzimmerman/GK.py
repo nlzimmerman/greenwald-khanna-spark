@@ -69,6 +69,9 @@ class GKQuantile(object):
             )
         return _gk
 
+    def approximateQuantile(self, quantiles, epsilon):
+        return self.gk_agg(self.sparkSession.sparkContext, quantiles, epsilon)
+
     def getGroupedQuantilesSQL(
         self,
         df, # DF with some key column that responds to GroupBy
