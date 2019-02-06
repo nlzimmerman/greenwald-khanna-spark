@@ -66,6 +66,11 @@ object Util {
       )
     )
   }
+  // https://stackoverflow.com/questions/11106886/scala-doubles-and-precision
+  def roundDouble(precision: Int=2)(x: Double): Double = {
+    import scala.math.BigDecimal
+    BigDecimal(x).setScale(precision, BigDecimal.RoundingMode.HALF_UP).toDouble
+  }
 }
 
 object NormalNumbers {
@@ -176,6 +181,40 @@ class MainSuite extends WordSpec {
       }
       "epsilon = 0.05" in {
         gkCheckFast(0.05)
+      }
+    }
+    "be able to invert the rounded normal distribution (i.e. not choke on duplicates)"  when {
+      import Util._
+      import NormalNumbers._
+      import TestParams._
+      "rounded to two digits" when {
+        val roundToTwo: Double => Double = roundDouble(2)
+        val roundedNumbers: Seq[Double] = numbers.map(
+          (x: Double) => roundToTwo(x)
+        )
+        // make sure that we actually do have duplicates.
+        // caution: this does not test the *exact* bug I found since that bug
+        // involved a specific sequence of numbers. 
+        assert(
+          roundedNumbers.
+            groupBy(identity).
+            mapValues(_.size).
+            values.
+            foldLeft(0)((x: Int, y: Int) => math.max(x,y))
+          > 1
+        )
+
+        def gkCheck(epsilon: Double): Unit = {
+          val bounds: Seq[(Double, Double)] = directQuantileBounds(targets, epsilon, roundedNumbers)
+          //val bounds2: Seq[(Double, Double)] = directQuantileBounds(targets, epsilon, numbers2)
+          val n: Seq[Double] = GKQuantile.getQuantiles(numbers, targets, epsilon)
+          //val m: Seq[Double] = GKQuantile.getQuantiles(numbers2, targets, epsilon)
+          boundsCheck(n, bounds)
+          //boundsCheck(m, bounds2)
+        }
+        "epsilon = 0.05" in {
+          gkCheck(0.05)
+        }
       }
     }
   }
