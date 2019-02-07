@@ -4,6 +4,7 @@ import org.apache.spark.SparkContext._
 import org.apache.spark.rdd.RDD
 import org.apache.spark.rdd.PairRDDFunctions
 import org.apache.spark.api.java.JavaRDD
+import scala.reflect.ClassTag
 import java.util.{
   ArrayList,
   Map => JavaMap
@@ -14,9 +15,7 @@ import scala.collection.JavaConversions._
   * writing in Scala and are definitely necessary to make the Pyspark wrapper work.
   */
 object GKQuantile {
-  // oof
-  // https://stackoverflow.com/questions/16921168/scala-generic-method-no-classtag-available-for-t
-  import scala.reflect.ClassTag
+
 
   // these mostly exist so that the python functions of the same name
   // can call them, because the

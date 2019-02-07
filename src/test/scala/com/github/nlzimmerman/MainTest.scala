@@ -42,21 +42,34 @@ object Util {
       (q) => (inverseNormalCDF(q-epsilon), inverseNormalCDF(q+epsilon))
     )
   }
+
   def directQuantileBounds(
     quantiles: Seq[Double],
     epsilon: Double,
     seq: Seq[Double]
   ): Seq[(Double, Double)] = {
-    val quantilesWithEpsilon: Seq[Double] = quantiles.flatMap(
-      (x) => Seq(x-epsilon, x+epsilon)
+    val quantilesWithEpsilon: Map[Double, (Double, Double)] = quantiles.map(
+      (x) => (x -> (x-epsilon, x+epsilon))
+    ).toMap
+    val targets: Seq[Double] = quantiles.flatMap(
+      (x: Double) => Seq(quantilesWithEpsilon(x)._1, quantilesWithEpsilon(x)._2)
     )
-    val lookup: Seq[Double] = DirectQuantile.getQuantiles(seq, quantilesWithEpsilon)
-    (0 until lookup.length by 2).map(
-      (i) => (lookup(i), lookup(i+1))
+    val lookup: Map[Double, Double] = DirectQuantile.getQuantiles(seq, targets)
+    // (0 until lookup.length by 2).map(
+    //   (i) => (lookup(i), lookup(i+1))
+    // )
+    quantiles.map(
+      (x: Double) => {
+        val lower: Double = quantilesWithEpsilon(x)._1
+        val upper: Double = quantilesWithEpsilon(x)._2
+        (lookup(lower), lookup(upper))
+      }
     )
   }
-  def boundsCheck[T](n: Seq[T], b: Seq[(T, T)])
-      (implicit num: Numeric[T]): Unit = {
+  def boundsCheck[T](
+    n: Seq[T],
+    b: Seq[(T, T)]
+  )(implicit num: Numeric[T]): Unit = {
     import num._
     assert(n.length == b.length)
     n.zip(b).foreach(
@@ -105,10 +118,12 @@ class MainSuite extends WordSpec {
       val n: Seq[Int] = (0 until 100)/*.map(_.toDouble)*/.toList
       val rand: Random = new Random(2200)
       val nShuffle: Seq[Int] = rand.shuffle(n)
-      DirectQuantile.getQuantiles(n, Seq(0.1, 0.15, 0.61, 0.99)).zip(
+      val targetQuantiles: Seq[Double] = Seq(0.1, 0.15, 0.61, 0.99)
+      val bounds: Map[Double, Int] = DirectQuantile.getQuantiles(nShuffle, targetQuantiles)
+      targetQuantiles.zip(
         Seq[Int](9, 14, 60, 98)
       ).foreach({
-        case(a: Int, b: Int) => assert(a==b)
+        case(a: Double, b: Int) => assert(bounds(a)==b)
       })
     }
     "be able to invert the exact normal distribution" in {
@@ -116,8 +131,8 @@ class MainSuite extends WordSpec {
       import NormalNumbers._
       import TestParams._
       val bounds: Seq[(Double, Double)] = inverseNormalCDFBounds(targets, 2.toDouble/500000)
-      val m: Seq[Double] = DirectQuantile.getQuantiles(exactNumbers, targets)
-      // val n: Seq[Double] = DirectQuantile.getQuantiles(numbers2, targets)
+      val q: Map[Double, Double] = DirectQuantile.getQuantiles(exactNumbers, targets)
+      val m: Seq[Double] = targets.map(q(_))
       boundsCheck(m, bounds)
       // boundsCheck(n, bounds)
     }
