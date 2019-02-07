@@ -17,7 +17,7 @@ class BasicTest(unittest.TestCase):
                     config("spark.jars", "../target/scala-2.11/greenwald-khanna-udaf_2.11-0.0.1.jar").
                     getOrCreate()
                 )
-        self.g = GKQuantile(self.sparkSession)
+        self.g = GKQuantile()
         self.a = self.sparkSession.sparkContext.parallelize([1.0,2.0,3.0,4.0,5.0])
         self.b = self.sparkSession.sparkContext.parallelize([10,20,30,40,50])
         self.normal = NormalNumbers()
@@ -29,8 +29,8 @@ class BasicTest(unittest.TestCase):
             0.82,
             0.95
         ]
-        n0 = self.g.sparkSession.sparkContext.parallelize(self.normal.numbers, 100).map(lambda x: ("a", x))
-        n1 = self.g.sparkSession.sparkContext.parallelize(self.normal.numbers2, 100).map(lambda x: ("b", x))
+        n0 = self.g.sparkContext.parallelize(self.normal.numbers, 100).map(lambda x: ("a", x))
+        n1 = self.g.sparkContext.parallelize(self.normal.numbers2, 100).map(lambda x: ("b", x))
         self.labeled_normal_numbers = n0.union(n1).toDF(["name", "value"]).repartition(100).cache()
     def test_sanity(self):
         self.assertEqual(self.a.count(), 5)
@@ -72,7 +72,7 @@ class BasicTest(unittest.TestCase):
                 (key, {t: b for t, b in zip(self.targets, bounds)})
                     for key in ("a", "b")
             ]
-            bounds_rdd = self.g.sparkSession.sparkContext.parallelize(bounds_list)
+            bounds_rdd = self.g.sparkContext.parallelize(bounds_list)
             # this takes as input a tuple,
             # with item 0 as the bounds (as a dict (quantile -> (lower, upper)))
             # and item 1 as the value (quantile -> value)
@@ -128,7 +128,8 @@ class BasicTest(unittest.TestCase):
                     )
     def test_gk_agg(self):
         '''using gk_agg at epsilon=0.01'''
-        gk = self.g.gk_agg(self.sparkSession.sparkContext, self.targets, 0.01)
+        #gk = self.g.gk_agg(self.sparkSession.sparkContext, self.targets, 0.01)
+        gk = self.g.gk_agg(self.targets, 0.01)
         quantiles_df = self.labeled_normal_numbers.groupBy(col("name")).agg(gk(col("value")).alias("quantiles"))
         quantiles_dict = quantiles_df.rdd.map(
             lambda x: (x["name"], x["quantiles"])
@@ -174,7 +175,7 @@ class BasicTest(unittest.TestCase):
 
 
     def test_int_groupBy_spark_simple(self):
-        n0 = self.g.sparkSession.sparkContext.parallelize([0,1,2,3,4]).map(lambda x: ("foo", x))
+        n0 = self.g.sparkContext.parallelize([0,1,2,3,4]).map(lambda x: ("foo", x))
         q = self.g.getGroupedQuantiles(n0, [0.5], 0.01, force_type = None)
         x = q.collectAsMap()["foo"][0.5]
         self.assertEqual(x, 2)
