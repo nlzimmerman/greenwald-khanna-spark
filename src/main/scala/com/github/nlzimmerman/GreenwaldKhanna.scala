@@ -59,8 +59,8 @@ class GKRecord[T](
           (g: GKEntry[T]) => v < g.v
         )
         val delta: Long = if (count < compressThreshold) {
-          // this solves a bug that is in the original paper and now I can't find the citation.
-          // Sorry.
+          // this solves a bug in the paper.
+          // see here https://www.stevenengelhardt.com/2018/03/07/calculating-percentiles-on-streaming-data-part-2-notes-on-implementing-greenwald-khanna/#GK01
           0L
         } else {
           // I used this to solve a specific bug that I encountered earlier that I

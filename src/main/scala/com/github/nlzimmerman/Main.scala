@@ -17,7 +17,7 @@ import scala.collection.mutable.ListBuffer
 
 object Main extends App {
   import org.apache.spark.SparkContext._
-  import com.github.nlzimmerman._
+  import com.github.nlzimmerman.GKQuantile._
   Logger.getLogger("org.apache.spark").setLevel(Level.WARN)
   Logger.getLogger("akka").setLevel(Level.WARN)
   lazy val spark: SparkSession = {
@@ -33,6 +33,9 @@ object Main extends App {
   /* Code that does something would go here */
 
   println("Hello world!")
+  val a: Seq[Int] = (0 until 10000).toSeq
+  val b: Map[Double, Int] = getQuantiles(a, Seq(0.25))
+  println(b(0.25))
 
   Logger.getLogger("org.apache.spark").setLevel(Level.OFF)
   Logger.getLogger("akka").setLevel(Level.OFF)
