@@ -103,6 +103,10 @@ class GKRecord[T](
       *
       * val threshold: Long = count/compressionThreshold
       */
+    // implementing banding logic, which one absolutely should not do right before one has to be somewhere.
+    // this is an MIT-licensed version that I might borrow from.
+    // NB: it's not super efficient from what I can tell.
+    // https://github.com/WladimirLivolis/GreenwaldKhanna/blob/master/src/GK.java
     val threshold: Long = math.floor(2*epsilon*count).toLong
     /** each of these functions are called exactly once.
       * Not sure if this makes my code more readable or less.
