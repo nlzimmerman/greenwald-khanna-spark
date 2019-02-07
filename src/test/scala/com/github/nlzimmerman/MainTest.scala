@@ -141,12 +141,15 @@ class MainSuite extends WordSpec {
       val n: Seq[Int] = (0 until 100).toList
       val rand: Random = new Random(2200)
       val nShuffle: Seq[Int] = rand.shuffle(n)
-      val q: Seq[Int] = GKQuantile.getQuantiles(nShuffle, Seq(0.0, 0.1, 0.15, 0.61, 0.99, 1.0), 0.05)
-
+      val smallTargets: Seq[Double] = Seq(0.0, 0.1, 0.15, 0.61, 0.99, 1.0)
+      val q: Map[Double, Int] = GKQuantile.getQuantiles(nShuffle, smallTargets, 0.05)
+      val qOrdered: Seq[Int] = smallTargets.map(
+        (x: Double) => q(x)
+      )
       val bounds: Seq[(Int, Int)] = Seq(
         (-1, 5), (5, 15), (10, 20), (56, 66), (94, 101), (94, 101)
       )
-      Util.boundsCheck(q, bounds)
+      Util.boundsCheck(qOrdered, bounds)
     }
 
     "be able to invert the normal distribution" when {
@@ -158,17 +161,21 @@ class MainSuite extends WordSpec {
       def gkCheck(epsilon: Double): Unit = {
         val bounds: Seq[(Double, Double)] = directQuantileBounds(targets, epsilon, numbers)
         //val bounds2: Seq[(Double, Double)] = directQuantileBounds(targets, epsilon, numbers2)
-        val n: Seq[Double] = GKQuantile.getQuantiles(numbers, targets, epsilon)
+        val n: Map[Double, Double] = GKQuantile.getQuantiles(numbers, targets, epsilon)
+        val q: Seq[Double] = targets.map(
+          (x: Double) => n(x)
+        )
         //val m: Seq[Double] = GKQuantile.getQuantiles(numbers2, targets, epsilon)
-        boundsCheck(n, bounds)
+        boundsCheck(q, bounds)
         //boundsCheck(m, bounds2)
       }
       // this checks against what the bounds should be, assuming that the
       // normal distribution is perfectly sampled. It works fine except at very small epsilon.
       def gkCheckFast(epsilon: Double): Unit = {
         val bounds: Seq[(Double, Double)] = inverseNormalCDFBounds(targets, epsilon)
-        val n: Seq[Double] = GKQuantile.getQuantiles(numbers, targets, epsilon)
-        boundsCheck(n, bounds)
+        val n: Map[Double, Double] = GKQuantile.getQuantiles(numbers, targets, epsilon)
+        val q: Seq[Double] = targets.map(n(_))
+        boundsCheck(q, bounds)
       }
       "epsilon = 0.001" in {
         gkCheck(0.001)
@@ -194,7 +201,7 @@ class MainSuite extends WordSpec {
         )
         // make sure that we actually do have duplicates.
         // caution: this does not test the *exact* bug I found since that bug
-        // involved a specific sequence of numbers. 
+        // involved a specific sequence of numbers.
         assert(
           roundedNumbers.
             groupBy(identity).
@@ -207,9 +214,10 @@ class MainSuite extends WordSpec {
         def gkCheck(epsilon: Double): Unit = {
           val bounds: Seq[(Double, Double)] = directQuantileBounds(targets, epsilon, roundedNumbers)
           //val bounds2: Seq[(Double, Double)] = directQuantileBounds(targets, epsilon, numbers2)
-          val n: Seq[Double] = GKQuantile.getQuantiles(numbers, targets, epsilon)
+          val n: Map[Double, Double] = GKQuantile.getQuantiles(numbers, targets, epsilon)
+          val q: Seq[Double] = targets.map(n(_))
           //val m: Seq[Double] = GKQuantile.getQuantiles(numbers2, targets, epsilon)
-          boundsCheck(n, bounds)
+          boundsCheck(q, bounds)
           //boundsCheck(m, bounds2)
         }
         "epsilon = 0.05" in {
@@ -235,8 +243,9 @@ class SparkSuite extends WordSpec {
         parallelize(numbers)
       def gkCheckFast(epsilon: Double): Unit = {
         val bounds: Seq[(Double, Double)] = inverseNormalCDFBounds(targets, epsilon)
-        val n: Seq[Double] = GKQuantile.getQuantiles(numbers, targets, epsilon)
-        boundsCheck(n, bounds)
+        val n: Map[Double, Double] = GKQuantile.getQuantiles(numbers, targets, epsilon)
+        val q: Seq[Double] = targets.map(n(_))
+        boundsCheck(q, bounds)
       }
       "epsilon = 0.005" in {
         gkCheckFast(0.005)

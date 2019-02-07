@@ -6,13 +6,15 @@ import org.apache.spark.SparkContext._
 
 import scala.annotation.tailrec
 
-
 object GKQuantile {
   import org.apache.spark.SparkContext._
   import org.apache.spark.rdd.RDD
   import org.apache.spark.rdd.PairRDDFunctions
   import org.apache.spark.api.java.JavaRDD
-  import java.util.ArrayList
+  import java.util.{
+    ArrayList,
+    Map => JavaMap
+  }
   import scala.collection.JavaConversions._
   // oof
   // https://stackoverflow.com/questions/16921168/scala-generic-method-no-classtag-available-for-t
@@ -21,19 +23,19 @@ object GKQuantile {
     x: Seq[T],
     quantiles: Seq[Double],
     epsilon: Double=0.01
-  )(implicit num: Numeric[T]): Seq[T] = {
+  )(implicit num: Numeric[T]): Map[Double, T] = {
     import num._
     val d: GKRecord[T] = x.foldLeft(new GKRecord[T](epsilon))(
       (x: GKRecord[T], y: T) => x.insert(y)
     )
-    quantiles.map((q: Double) => d.query(q))
+    quantiles.map((q: Double) => (q -> d.query(q))).toMap
   }
 
   def getQuantiles[T](
     x: RDD[T],
     quantiles: Seq[Double],
     epsilon: Double
-  )(implicit num: Numeric[T]): Seq[T] = {
+  )(implicit num: Numeric[T]): Map[Double, T] = {
     import num._
     val d: GKRecord[T] = x.treeAggregate(
       new GKRecord[T](epsilon)
@@ -41,7 +43,7 @@ object GKQuantile {
       (a: GKRecord[T], b: T) => a.insert(b),
       (a: GKRecord[T], b: GKRecord[T]) => a.combine(b)
     )
-    quantiles.map((q: Double) => d.query(q))
+    quantiles.map((q: Double) => (q -> d.query(q))).toMap
   }
 
   /** The python function getQuantiles calls these two functions
@@ -50,13 +52,17 @@ object GKQuantile {
     x: JavaRDD[Int],
     quantiles: ArrayList[Double],
     epsilon: Double
-  ): Array[Int] = getQuantiles(x, quantiles.toSeq, epsilon).toArray
+  ): JavaMap[Double, Int] = {
+    // using an implicit to make this happen
+    val out: JavaMap[Double, Int] = getQuantiles(x, quantiles.toSeq, epsilon)
+    out
+  }
 
   def _PyGetQuantilesDouble(
     x: JavaRDD[Double],
     quantiles: ArrayList[Double],
     epsilon: Double
-  ): Array[Double] = getQuantiles(x, quantiles.toSeq, epsilon).toArray
+  ): JavaMap[Double, Double] = getQuantiles(x, quantiles.toSeq, epsilon)
 
   /** I changed the output of this function as I was getting ready for 1.0
     * Formerly, it returned an RDD[((U, Double), T)], i.e.
@@ -120,7 +126,7 @@ object GKQuantile {
     val calculatedArrays: RDD[Array[Any]] = x.map(
       (y: (Any, Map[Double, T])) => {
         // this leverages the JavaConverters import
-        val y2: java.util.Map[Double, T] = y._2
+        val y2: JavaMap[Double, T] = y._2
         Array(y._1, y2)
       }
     )

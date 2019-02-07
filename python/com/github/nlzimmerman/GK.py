@@ -71,7 +71,7 @@ def getGroupedQuantilesSQL(
     return df.groupBy(col(groupByColumn)).agg(gk(col(aggregationColumn)).alias(outputColumnName))
 
 
-# Take calculate quantiles over an RDD of
+# Calculate quantiles over an RDD of
 # numbers, with no groupBy performed.
 # It can attempt to infer and preserve types if you pass force_type=None, or
 # it can force everything to be an int or a float.
