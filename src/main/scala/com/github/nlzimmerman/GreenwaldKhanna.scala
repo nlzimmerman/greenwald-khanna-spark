@@ -52,11 +52,8 @@ object GKQuantile {
     x: JavaRDD[Int],
     quantiles: ArrayList[Double],
     epsilon: Double
-  ): JavaMap[Double, Int] = {
-    // using an implicit to make this happen
-    val out: JavaMap[Double, Int] = getQuantiles(x, quantiles.toSeq, epsilon)
-    out
-  }
+    // remember, this works because of an implicit conversion. 
+  ): JavaMap[Double, Int] = getQuantiles(x, quantiles.toSeq, epsilon)
 
   def _PyGetQuantilesDouble(
     x: JavaRDD[Double],

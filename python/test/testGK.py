@@ -36,13 +36,13 @@ class BasicTest(unittest.TestCase):
     def test_quantile_float_simple(self):
         x = getQuantiles(self.a, [0.5], force_type = None)
         self.assertEqual(len(x), 1)
-        self.assertEqual(type(x[0]), float)
-        self.assertEqual(x[0], 3.0)
+        self.assertEqual(type(x[0.5]), float)
+        self.assertEqual(x[0.5], 3.0)
     def test_quantile_int_simple(self):
         x = getQuantiles(self.b, [0.5], force_type = None)
         self.assertEqual(len(x), 1)
-        self.assertEqual(type(x[0]), int)
-        self.assertEqual(x[0], 30)
+        self.assertEqual(type(x[0.5]), int)
+        self.assertEqual(x[0.5], 30)
     # duplicate the tests that happen in the scala as closely as we can.
     # we're only including the spark tests since those are all that have
     # python wrappers.
@@ -53,7 +53,8 @@ class BasicTest(unittest.TestCase):
             # getQuantiles returns a LIST, not an RDD
             n = getQuantiles(n0, self.targets, epsilon)
             self.assertEqual(len(bounds), len(n))
-            for b, x in zip(bounds, n):
+            for b, t in zip(bounds, self.targets):
+                x = n[t]
                 self.assertTrue(b[0] <= x)
                 self.assertTrue(x <= b[1])
     def test_normal_groupBy_spark(self):
