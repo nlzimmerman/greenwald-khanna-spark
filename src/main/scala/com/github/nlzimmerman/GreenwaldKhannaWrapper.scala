@@ -1,18 +1,27 @@
 package com.github.nlzimmerman
 
+import org.apache.spark.SparkContext._
+import org.apache.spark.rdd.RDD
+import org.apache.spark.rdd.PairRDDFunctions
+import org.apache.spark.api.java.JavaRDD
+import java.util.{
+  ArrayList,
+  Map => JavaMap
+}
+import scala.collection.JavaConversions._
+
+/** This package includes convenience functions that might be useful to a person
+  * writing in Scala and are definitely necessary to make the Pyspark wrapper work.
+  */
 object GKQuantile {
-  import org.apache.spark.SparkContext._
-  import org.apache.spark.rdd.RDD
-  import org.apache.spark.rdd.PairRDDFunctions
-  import org.apache.spark.api.java.JavaRDD
-  import java.util.{
-    ArrayList,
-    Map => JavaMap
-  }
-  import scala.collection.JavaConversions._
   // oof
   // https://stackoverflow.com/questions/16921168/scala-generic-method-no-classtag-available-for-t
   import scala.reflect.ClassTag
+
+  // these mostly exist so that the python functions of the same name
+  // can call them, because the
+  // objects would be a huge pain to directly manipulat in Pyspark.
+  // this takes a sequence, not an RDD. It seems unlikely that it would ever be called.
   def getQuantiles[T](
     x: Seq[T],
     quantiles: Seq[Double],
@@ -24,7 +33,7 @@ object GKQuantile {
     )
     quantiles.map((q: Double) => (q -> d.query(q))).toMap
   }
-
+  // here's the one that will get called in Spark.
   def getQuantiles[T](
     x: RDD[T],
     quantiles: Seq[Double],
@@ -41,6 +50,9 @@ object GKQuantile {
   }
 
   /** The python function getQuantiles calls these two functions
+    * Since py4j can't understand generics (since it's working with compiled/
+    * type-erased code), it does type inspections and
+    * then calls these typed functions.
     */
   def _PyGetQuantilesInt(
     x: JavaRDD[Int],
@@ -90,7 +102,7 @@ object GKQuantile {
 
 
   /* Python compatibility to the above */
-  /*  this is called by _PyGetGroupedQuantilesStringDouble and _PyGetGroupedQuantilesStringInt
+  /*  this is called by _PyGetGroupedQuantilesDouble and _PyGetGroupedQuantilesInt
     * it's private just so I don't forget what it's here for. :)
     */
   private def pyToTuple2[T](x: JavaRDD[Any]): RDD[(Any, T)] = {
@@ -113,6 +125,8 @@ object GKQuantile {
     )
     asRDDTuple
   }
+  // this gets the output of getGroupedQuantiles back into Python tuples, which py4j
+  // understands as Arrays
   private def groupedQuantilesToPython[T](x: RDD[(Any, Map[Double,T])]): JavaRDD[Array[Any]] = {
     val calculatedArrays: RDD[Array[Any]] = x.map(
       (y: (Any, Map[Double, T])) => {
@@ -121,13 +135,6 @@ object GKQuantile {
         Array(y._1, y2)
       }
     )
-    /*
-    val calculatedArrays: RDD[Array[Any]] = x.map(
-      (y: ((Any, Double), T)) => {
-        Array(Array(y._1._1, y._1._2), y._2)
-      }
-    )
-    */
     /*  this also takes advantage of one of the implicits we imported at the top
       * of the file.
       */
