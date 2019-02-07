@@ -25,7 +25,9 @@ import org.apache.spark.sql.types.{
   MapType
 }
 
-// I don't fully understand what the : Encoder party does but it needs to be there.
+import scala.collection.JavaConversions._
+
+// I don't fully understand what the : Encoder part does but it needs to be there.
 class GKAggregator[T: Numeric: Encoder](
   quantiles: Seq[Double],
   epsilon: Double
@@ -34,7 +36,6 @@ class GKAggregator[T: Numeric: Encoder](
 
   def zero: GKRecord[T] = new GKRecord[T](epsilon)
   def reduce(a: GKRecord[T], b: T): GKRecord[T] = a.insert(b)
-  //def reduce(a: GKRecord[T], b: T): GKRecord[T] = a.insert(b)
   def merge(a: GKRecord[T], b: GKRecord[T]): GKRecord[T] = a.combine(b)
   def finish(reduction: GKRecord[T]): Map[Double,T] = quantiles.map(
     (q: Double) => (q -> reduction.query(q))
@@ -44,10 +45,18 @@ class GKAggregator[T: Numeric: Encoder](
   def outputEncoder: Encoder[Map[Double,T]] = Encoders.kryo[Map[Double,T]]
 }
 
-// so, that was cool but it doesn't work with Python as far as I know beceause
-// so far as I've been able to determine, Pyspark doesn't support TypedColumns
-// soooooo, let's see about this.
-
+/** so, that was cool but it doesn't work with Python as far as I know beceause
+  * so far as I've been able to determine, Pyspark doesn't support TypedColumns
+  * soooooo, let's see about this.
+  *
+  * This works fine and is, so far as I know, not wrong, but it may be very much
+  * less efficient than an implementation that actually uses ArrayBuffers
+  * and Rows the way they're "supposed" to be use with updates etc.
+  *
+  * This converts our buffers into an instance typed GKRecord,
+  * does the insert or combine logic on that, and then turns it back into a buffer.
+  * I have no idea how expensive that is but I wouldn't presume that it's cheap.
+  */
 class UntypedGKAggregator(
   val quantiles: Seq[Double],
   val epsilon: Double
@@ -57,18 +66,14 @@ class UntypedGKAggregator(
   def this(
     q: java.util.ArrayList[Double],
     e: Double
-  ) = {
-    // https://stackoverflow.com/questions/35988315/convert-java-list-to-scala-seq
-    this(
-      {
-        import scala.collection.JavaConversions._
-        // leveraging implicits
-        val l: Seq[Double] = q
-        l
-      },
-      e
-    )
-  }
+  ) = this(
+    {
+      // leveraging implicit conversion in scala.collection.JavaConversions._
+      val l: Seq[Double] = q
+      l
+    },
+    e
+  )
   def deterministic: Boolean = false
   def dataType: DataType = MapType(DoubleType, DoubleType)
   def inputSchema: StructType = StructType(
@@ -95,6 +100,7 @@ class UntypedGKAggregator(
     buffer(1) = 0L
   }
 
+  // FROM HERE DOWN ARE FUNCTIONS THAT WOULD IDEALLY BE REWRITTEN FOR PERFORMANCE.
 
   /** Instead of actually rewriting this in Spark SQL, I'm just
     * writing a wrapper that calls the code I've already written.
@@ -119,7 +125,6 @@ class UntypedGKAggregator(
         )
       )
     }
-    // I assume this is expensive, but I haven't checked.
     new GKRecord[Double](epsilon, sample.toList, count)
   }
   // Turns a typed record back into the stuff that goes into a bufferSchema.
@@ -141,9 +146,6 @@ class UntypedGKAggregator(
   // buffer is of "type" bufferSchema
   // input is of "type" inputSchema
   def update(buffer: MutableAggregationBuffer, input: Row): Unit = {
-    /** I assume this this is absurdly inefficient but it lets me reuse my
-      * existing code, so I'll start with this.
-      */
     val newValue: Double = input.getDouble(0)
     val oldGKRecord: GKRecord[Double] = bufferToGKRecord(buffer)
     val updatedGKRecord: GKRecord[Double] = oldGKRecord.insert(newValue)
