@@ -74,8 +74,13 @@ class UntypedGKAggregator(
     },
     e
   )
+  // it's possible I'm wrong and this IS deterministic. There's no randomness
+  // but the order that
   def deterministic: Boolean = false
+  // this is the return type.
   def dataType: DataType = MapType(DoubleType, DoubleType)
+  // this is the input type. Just one column. Note that the actual name of the column
+  // doesn't matter; this is just what it's referred to here. 
   def inputSchema: StructType = StructType(
     StructField("value", DoubleType, false) ::
     Nil

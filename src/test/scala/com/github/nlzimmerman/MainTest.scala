@@ -380,13 +380,13 @@ class SQLSuite extends WordSpec {
       val df: DataFrame = {
         numbers.map((x: Double) => ("a", x)).union(
           numbers2.map((x: Double) => ("b", x))
-        ).toDF("name", "value").repartition(100)
+        ).toDF("name", "v").repartition(100)
       }
       def checker(epsilon: Double): Unit = {
         val bounds: Seq[(Double, Double)] = inverseNormalCDFBounds(targets, epsilon)
         val keyedQuantiles: Map[String, Map[Double, Double]] = {
           val quantilizer: UntypedGKAggregator = new UntypedGKAggregator(targets, epsilon)
-          val qFrame: DataFrame = df.groupBy($"name").agg(quantilizer($"value").alias("quantiles"))
+          val qFrame: DataFrame = df.groupBy($"name").agg(quantilizer($"v").alias("quantiles"))
           val qRDD: RDD[(String, Map[Double, Double])] = qFrame.rdd.map(
             (x: Row) => (x.getString(0), x.getAs[Map[Double, Double]](1))
           )
