@@ -5,6 +5,7 @@ import scala.collection.JavaConverters._
 import org.apache.spark.SparkContext._
 
 import scala.annotation.tailrec
+import scala.collection.immutable.Queue
 
 /** The logic here is defined in
 
@@ -35,6 +36,8 @@ case class GKEntry[T](
 // this is the record itself. Use insert(), combine(), and query() to manipulate it.
 // you should only instantiate this with epsilon publicly,
 // specifying sample and count only makes sense for updates.
+/** I'm using a List for the sample because it's essentially always read in order, head to tail.
+  */
 class GKRecord[T](
   val epsilon: Double,
   val sample: Seq[GKEntry[T]] = List[GKEntry[T]](),
@@ -101,9 +104,9 @@ class GKRecord[T](
       * +/- 7).
       * You could equally define this as
       *
-      * val threshold: Long = count/compressionThreshold
+      * val maxDelta: Long = count/compressionThreshold
       */
-    val threshold: Long = math.floor(2*epsilon*count).toLong
+    val maxDelta: Long = math.floor(2*epsilon*count).toLong
     // As you can see, I didn't actually use this version https://github.com/WladimirLivolis/GreenwaldKhanna/blob/master/src/GK.java
     // but I am in debt to it. Good thing it's MIT licensed!
     /** This goes through the list of possible values of delta _backwards_ to
@@ -123,19 +126,39 @@ class GKRecord[T](
         currentBand: Long=0,
         acc: List[Long] = List.empty[Long]
       ): List[Long] = {
-        val nextThreshold: Long = threshold - (1L << currentBand) - (threshold % (1L << currentBand))
+        // remember that 1 << x == math.pow(2,x)
+        val nextThreshold: Long = maxDelta - (1L << currentBand) - (maxDelta % (1L << currentBand))
+        /** I don't know whether this is more readable than an if/else if/else
+          * or not. I don't think there's anything wrong with this but historically
+          * I have used if/elses in situations like this.
+          */
         delta match {
+          /** delta is decrementing from the highest possible value to 0
+            * Once it hits 0, we are done.
+            */
           case 0L => (currentBand + 1) +: acc
-          case `threshold` => makeBandsInner(
+          /** since the variable name is lower case, I need backticks to make a
+            * stable identifier.
+            * https://www.scala-lang.org/files/archive/spec/2.11/08-pattern-matching.html
+            */
+          /** If delta == maxDelta, we just started, in this special case, prepend
+            * a 0 to the (empty) list, not a 1
+            */
+          case `maxDelta` => makeBandsInner(
             delta-1,
             currentBand+1,
             0L +: acc
           )
+          /** if we crossed a threshold, increment the band (including at this record)
+            */
           case `nextThreshold` => makeBandsInner(
             delta-1,
             currentBand+1,
             (currentBand+1) +: acc
           )
+          /** we didn't cross a threshold, so prepend the existing band and
+            * keep going.
+            */
           case _ => makeBandsInner(
             delta-1,
             currentBand,
@@ -143,30 +166,9 @@ class GKRecord[T](
           )
         }
       }
-
-
-        /*{
-        if (delta == 0) (currentBand + 1) +: acc
-        else if (delta==threshold) makeBandsInner(
-          delta-1,
-          currentBand+1,
-          0L +: acc
-        )
-        else if (
-          (threshold - (1L << currentBand) - (threshold % (1L << currentBand))) == delta
-        ) makeBandsInner(
-          delta-1,
-          currentBand+1,
-          (currentBand+1) +: acc
-        )
-        else makeBandsInner(
-          delta-1,
-          currentBand,
-          currentBand +: acc
-        )
-      }*/
-      makeBandsInner(threshold)
+      makeBandsInner(maxDelta)
     }
+    // vector because this is going to be random-read
     val band: Vector[Long] = makeBands().toVector
     /** each of these functions are called exactly once.
       * Not sure if this makes my code more readable or less.
@@ -176,7 +178,7 @@ class GKRecord[T](
       */
     def isCombinable(a: GKEntry[T], b: GKEntry[T]): Boolean = {
         (band(a.delta.toInt) < band(b.delta.toInt)) &&
-        ((a.g + b.g + b.delta) < threshold)
+        ((a.g + b.g + b.delta) < maxDelta)
     }
     def combine(a: GKEntry[T], b: GKEntry[T]): GKEntry[T] = {
       GKEntry(b.v, a.g+b.g, b.delta)
@@ -191,11 +193,12 @@ class GKRecord[T](
       * If the first two entries can't be combined, it places the first entry
       * at the end of the output list and then considers the next two.
       */
+    // I'm using a Queue for out because I'll be appending to it a bunch.
     @tailrec
     def collapse(
       head: GKEntry[T],
       tail: Seq[GKEntry[T]],
-      out: Seq[GKEntry[T]] = Nil
+      out: Seq[GKEntry[T]] = Queue.empty[GKEntry[T]]
     ): Seq[GKEntry[T]] = {
       /** we never remove the last element from the sample so once tail is
         * down to a single entry, we're done.
@@ -240,7 +243,11 @@ class GKRecord[T](
         // (the logic that saves us from combining the last two is in collapse)
         val head: GKEntry[T] = sample.head
         val tail: Seq[GKEntry[T]] = sample.tail
-        head +: collapse(tail.head, tail.tail)
+        // going back to a list here because we're going back to the realm where
+        // we're reading front to back.
+        // the type annotation for GKRecord calls for a Seq so it's not a compiler
+        // error to not do this. 
+        (head +: collapse(tail.head, tail.tail)).toList
       }
     }
     (new GKRecord[T](epsilon, out, count))
