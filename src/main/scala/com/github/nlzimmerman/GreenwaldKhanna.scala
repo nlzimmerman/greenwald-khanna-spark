@@ -103,11 +103,37 @@ class GKRecord[T](
       *
       * val threshold: Long = count/compressionThreshold
       */
-    // implementing banding logic, which one absolutely should not do right before one has to be somewhere.
-    // this is an MIT-licensed version that I might borrow from.
-    // NB: it's not super efficient from what I can tell.
-    // https://github.com/WladimirLivolis/GreenwaldKhanna/blob/master/src/GK.java
     val threshold: Long = math.floor(2*epsilon*count).toLong
+    // As you can see, I didn't actually use this version https://github.com/WladimirLivolis/GreenwaldKhanna/blob/master/src/GK.java
+    // but I am in debt to it. Good thing it's MIT licensed!
+    def computeBands(delta: Long): Long = {
+      // p is the largest value of delta that we can find in the record for this
+      // value of count and epsilon
+      // the value formerly known as "p" is now just threshold pulled in from out-of-scope
+      // no log2 in Scala
+      val largestBand: Long = math.ceil(math.log(threshold)/math.log(2)).toLong
+      @tailrec
+      def checker(alpha: Long): Long =
+        if ({
+          // making these variables to avoid doing the math twice.
+          // what a fun old trick.
+          val twoToTheAlpha: Long = 1L << alpha//math.pow(2, alpha).toLong
+          val twoToTheAlphaMinusOne: Long = 1L << (alpha-1)//math.pow(2, alpha-1).toLong
+          (
+            (threshold-twoToTheAlpha-(threshold%twoToTheAlpha)) < delta &&
+            (threshold-twoToTheAlphaMinusOne-(threshold%twoToTheAlphaMinusOne)) >= delta
+          )
+        }) alpha
+        else checker(alpha-1)
+      if(delta==threshold) 0 else checker(largestBand)
+    }
+    // doing this to avoid actually doing the math more than once.
+    // I'm using a Map and not a Vector because Vector keys are supposed to be ints
+    // and I'm using Longs. It may be silly for me to be using Longs.
+    val band: Vector[Long] =
+      (0L to threshold).map(
+        (x: Long) => computeBands(x)
+      ).toVector
     /** each of these functions are called exactly once.
       * Not sure if this makes my code more readable or less.
       */
@@ -115,7 +141,8 @@ class GKRecord[T](
       * doing so would contain fewer than the threshold (above) number of values.
       */
     def isCombinable(a: GKEntry[T], b: GKEntry[T]): Boolean = {
-        (a.g + b.g + b.delta) < threshold
+        (band(a.delta.toInt) < band(b.delta.toInt)) &&
+        ((a.g + b.g + b.delta) < threshold)
     }
     def combine(a: GKEntry[T], b: GKEntry[T]): GKEntry[T] = {
       GKEntry(b.v, a.g+b.g, b.delta)
