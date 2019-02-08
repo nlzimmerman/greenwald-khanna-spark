@@ -106,18 +106,48 @@ class GKRecord[T](
     val threshold: Long = math.floor(2*epsilon*count).toLong
     // As you can see, I didn't actually use this version https://github.com/WladimirLivolis/GreenwaldKhanna/blob/master/src/GK.java
     // but I am in debt to it. Good thing it's MIT licensed!
-
-    def makeBands(threshold: Long) = {
+    /** This goes through the list of possible values of delta _backwards_ to
+      * find which band each value is in. By doing it this way, I can cut down
+      * on a fair bit of excess calculation.
+      * when delta == threshold (which is the largest possible value of delta)
+      * we are in band 0
+      * when delta == 0, we are in the largest possible band, which is
+      * equal to ceil(log2(threshold))
+      * the band increases every time
+      # delta == threshold - (2**currentBand) - (threshold % (2**currentBand))
+      */
+    def makeBands() = {
       @tailrec
       def makeBandsInner(
-        threshold: Long,
         delta: Long,
         currentBand: Long=0,
         acc: List[Long] = List.empty[Long]
       ): List[Long] = {
+        val nextThreshold: Long = threshold - (1L << currentBand) - (threshold % (1L << currentBand))
+        delta match {
+          case 0L => (currentBand + 1) +: acc
+          case `threshold` => makeBandsInner(
+            delta-1,
+            currentBand+1,
+            0L +: acc
+          )
+          case `nextThreshold` => makeBandsInner(
+            delta-1,
+            currentBand+1,
+            (currentBand+1) +: acc
+          )
+          case _ => makeBandsInner(
+            delta-1,
+            currentBand,
+            currentBand +: acc
+          )
+        }
+      }
+
+
+        /*{
         if (delta == 0) (currentBand + 1) +: acc
         else if (delta==threshold) makeBandsInner(
-          threshold,
           delta-1,
           currentBand+1,
           0L +: acc
@@ -125,24 +155,19 @@ class GKRecord[T](
         else if (
           (threshold - (1L << currentBand) - (threshold % (1L << currentBand))) == delta
         ) makeBandsInner(
-          threshold,
           delta-1,
           currentBand+1,
           (currentBand+1) +: acc
         )
         else makeBandsInner(
-          threshold,
           delta-1,
           currentBand,
           currentBand +: acc
         )
-      }
-      makeBandsInner(threshold, threshold)
+      }*/
+      makeBandsInner(threshold)
     }
-    // doing this to avoid actually doing the math more than once.
-    // I'm using a Map and not a Vector because Vector keys are supposed to be ints
-    // and I'm using Longs. It may be silly for me to be using Longs.
-    val band: Vector[Long] = makeBands(threshold).toVector
+    val band: Vector[Long] = makeBands().toVector
     /** each of these functions are called exactly once.
       * Not sure if this makes my code more readable or less.
       */
