@@ -5,11 +5,14 @@ package object nlzimmerman {
   /** These functions ARE used to manipulate the sample list in
     * GKRecord
     */
-  def listInsert[U](l: List[U], i: Int, a: U): List[U] = {
-    (l.dropRight(l.length-i) :+ a) ::: l.drop(i)
+  // def listInsert[U](l: List[U], i: Int, a: U): List[U] = {
+  //   (l.dropRight(l.length-i) :+ a) ::: l.drop(i)
+  // }
+  def seqInsert[U](l: Seq[U], i: Int, a: U): Seq[U] = {
+    l.dropRight(l.length-i) ++ (a +: l.drop(i))
   }
-  def listReplace[U](l: List[U], i: Int, a: U): List[U] = {
-    (l.dropRight(l.length-i) :+ a) ::: l.drop(i+1)
+  def seqReplace[U](l: Seq[U], i: Int, a: U): Seq[U] = {
+    l.dropRight(l.length-i) ++ (a +: l.drop(i+1))
   }
   /** These functions are not used, but I used them when I was smoke-testing
     * the code and they might be useful in the future.

@@ -37,14 +37,14 @@ case class GKEntry[T](
 // specifying sample and count only makes sense for updates.
 class GKRecord[T](
   val epsilon: Double,
-  val sample: List[GKEntry[T]] = List[GKEntry[T]](),
+  val sample: Seq[GKEntry[T]] = List[GKEntry[T]](),
   val count: Long = 0
 )(implicit num: Numeric[T]) extends Serializable {
   import num._
   val compressThreshold: Long = (1.0/(2.0*epsilon)).toLong
   // the INSERT operation defined in the first paper.
   def insert(v: T): GKRecord[T] = {
-    val newSample: List[GKEntry[T]] = {
+    val newSample: Seq[GKEntry[T]] = {
       if ( // if v is smaller than any item in the record
         (sample.length == 0) ||
         (v < sample.head.v)
@@ -69,7 +69,7 @@ class GKRecord[T](
           math.floor(2*epsilon*count).toLong
         }
         // listInsert is defined in the package object.
-        listInsert(sample, i, GKEntry[T](v, 1, delta))
+        seqInsert(sample, i, GKEntry[T](v, 1, delta))
       }
     }
 
@@ -106,34 +106,43 @@ class GKRecord[T](
     val threshold: Long = math.floor(2*epsilon*count).toLong
     // As you can see, I didn't actually use this version https://github.com/WladimirLivolis/GreenwaldKhanna/blob/master/src/GK.java
     // but I am in debt to it. Good thing it's MIT licensed!
-    def computeBands(delta: Long): Long = {
-      // p is the largest value of delta that we can find in the record for this
-      // value of count and epsilon
-      // the value formerly known as "p" is now just threshold pulled in from out-of-scope
-      // no log2 in Scala
-      val largestBand: Long = math.ceil(math.log(threshold)/math.log(2)).toLong
+
+    def makeBands(threshold: Long) = {
       @tailrec
-      def checker(alpha: Long): Long =
-        if ({
-          // making these variables to avoid doing the math twice.
-          // what a fun old trick.
-          val twoToTheAlpha: Long = 1L << alpha//math.pow(2, alpha).toLong
-          val twoToTheAlphaMinusOne: Long = 1L << (alpha-1)//math.pow(2, alpha-1).toLong
-          (
-            (threshold-twoToTheAlpha-(threshold%twoToTheAlpha)) < delta &&
-            (threshold-twoToTheAlphaMinusOne-(threshold%twoToTheAlphaMinusOne)) >= delta
-          )
-        }) alpha
-        else checker(alpha-1)
-      if(delta==threshold) 0 else checker(largestBand)
+      def makeBandsInner(
+        threshold: Long,
+        delta: Long,
+        currentBand: Long=0,
+        acc: List[Long] = List.empty[Long]
+      ): List[Long] = {
+        if (delta == 0) (currentBand + 1) +: acc
+        else if (delta==threshold) makeBandsInner(
+          threshold,
+          delta-1,
+          currentBand+1,
+          0L +: acc
+        )
+        else if (
+          (threshold - (1L << currentBand) - (threshold % (1L << currentBand))) == delta
+        ) makeBandsInner(
+          threshold,
+          delta-1,
+          currentBand+1,
+          (currentBand+1) +: acc
+        )
+        else makeBandsInner(
+          threshold,
+          delta-1,
+          currentBand,
+          currentBand +: acc
+        )
+      }
+      makeBandsInner(threshold, threshold)
     }
     // doing this to avoid actually doing the math more than once.
     // I'm using a Map and not a Vector because Vector keys are supposed to be ints
     // and I'm using Longs. It may be silly for me to be using Longs.
-    val band: Vector[Long] =
-      (0L to threshold).map(
-        (x: Long) => computeBands(x)
-      ).toVector
+    val band: Vector[Long] = makeBands(threshold).toVector
     /** each of these functions are called exactly once.
       * Not sure if this makes my code more readable or less.
       */
@@ -160,9 +169,9 @@ class GKRecord[T](
     @tailrec
     def collapse(
       head: GKEntry[T],
-      tail: List[GKEntry[T]],
-      out: List[GKEntry[T]] = Nil
-    ): List[GKEntry[T]] = {
+      tail: Seq[GKEntry[T]],
+      out: Seq[GKEntry[T]] = Nil
+    ): Seq[GKEntry[T]] = {
       /** we never remove the last element from the sample so once tail is
         * down to a single entry, we're done.
         * Note that the tail.isEmpty check should never be true in practice,
@@ -192,7 +201,7 @@ class GKRecord[T](
       }
     }
     // this is where the work is actually done.
-    val out: List[GKEntry[T]] = {
+    val out: Seq[GKEntry[T]] = {
       /** if there are zero, one, or two elements in sample we can't possibly
         * compress (because you never modify the first or last element of sample)
         * would it be better to do
@@ -205,7 +214,7 @@ class GKRecord[T](
         // never attempt to combine the first element.
         // (the logic that saves us from combining the last two is in collapse)
         val head: GKEntry[T] = sample.head
-        val tail: List[GKEntry[T]] = sample.tail
+        val tail: Seq[GKEntry[T]] = sample.tail
         head +: collapse(tail.head, tail.tail)
       }
     }
@@ -269,8 +278,8 @@ class GKRecord[T](
       // and use the otherNext map to recalcualte deltas.
       // this is documented in section 3.1.3 but I had to do some algebra to
       // get this, and I've since lost my notes.
-      val combined: List[GKEntry[T]] = (sample ::: that.sample).sortBy(_.v)
-      val out: List[GKEntry[T]] = combined.map(
+      val combined: Seq[GKEntry[T]] = (sample ++ that.sample).sortBy(_.v)
+      val out: Seq[GKEntry[T]] = combined.map(
         (x: GKEntry[T]) => otherNext(x) match {
           case None => x
           case Some(otherNext) => {
@@ -287,7 +296,7 @@ class GKRecord[T](
       val newCount: Long = count + that.count
       val toReturn: GKRecord[T] = new GKRecord[T](
         newEpsilon,
-        out.toList,
+        out,
         newCount
       )
       /*
