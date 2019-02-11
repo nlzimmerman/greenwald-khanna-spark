@@ -1,14 +1,5 @@
 package com.github.nlzimmerman
 
-// here goes!
-// cribbing from spark/examples/src/main/scala/org/apache/spark/examples/sql/UserDefinedTypedAggregation.scala
-// and alsio https://docs.databricks.com/spark/latest/dataframes-datasets/aggregators.html
-
-import org.apache.spark.sql.{
-  Encoder,
-  Encoders,
-  SparkSession
-}
 import org.apache.spark.sql.expressions.{
   Aggregator,
   MutableAggregationBuffer,
@@ -26,24 +17,8 @@ import org.apache.spark.sql.types.{
 }
 
 import scala.collection.JavaConversions._
-
-// I don't fully understand what the : Encoder part does but it needs to be there.
-class GKAggregator[T: Numeric: Encoder](
-  quantiles: Seq[Double],
-  epsilon: Double
-) extends Aggregator[T, GKRecord[T], Map[Double,T]] with Serializable {
-  private val numeric = implicitly[Numeric[T]]
-
-  def zero: GKRecord[T] = new GKRecord[T](epsilon)
-  def reduce(a: GKRecord[T], b: T): GKRecord[T] = a.insert(b)
-  def merge(a: GKRecord[T], b: GKRecord[T]): GKRecord[T] = a.combine(b)
-  def finish(reduction: GKRecord[T]): Map[Double,T] = quantiles.map(
-    (q: Double) => (q -> reduction.query(q))
-  ).toMap
-  // not sure if I'm doing this right.
-  def bufferEncoder: Encoder[GKRecord[T]] = Encoders.kryo[GKRecord[T]]
-  def outputEncoder: Encoder[Map[Double,T]] = Encoders.kryo[Map[Double,T]]
-}
+import scala.annotation.tailrec
+import scala.collection.immutable.Queue
 
 /** so, that was cool but it doesn't work with Python as far as I know beceause
   * so far as I've been able to determine, Pyspark doesn't support TypedColumns
@@ -74,13 +49,14 @@ class UntypedGKAggregator(
     },
     e
   )
+  val compressionThreshold: Long = (1.0/(2.0*epsilon)).toLong
   // it's possible I'm wrong and this IS deterministic. There's no randomness
-  // but the order that
+  // but the order that numbers are fed into this thing will certainly effect the outcome.
   def deterministic: Boolean = false
   // this is the return type.
   def dataType: DataType = MapType(DoubleType, DoubleType)
   // this is the input type. Just one column. Note that the actual name of the column
-  // doesn't matter; this is just what it's referred to here. 
+  // doesn't matter; this is just what it's referred to here.
   def inputSchema: StructType = StructType(
     StructField("value", DoubleType, false) ::
     Nil
@@ -98,11 +74,15 @@ class UntypedGKAggregator(
   def bufferSchema: StructType = StructType(
     StructField("sample", ArrayType(recordSchema)) ::
     StructField("count", LongType) ::
+    StructField("pending", ArrayType(DoubleType)) ::
+    StructField("pendingCount", LongType) ::
     Nil
   )
   def initialize(buffer: MutableAggregationBuffer): Unit = {
     buffer(0) = Array[Any]()
     buffer(1) = 0L
+    buffer(2) = Array[Long]()
+    buffer(3) = 0L
   }
 
   // FROM HERE DOWN ARE FUNCTIONS THAT WOULD IDEALLY BE REWRITTEN FOR PERFORMANCE.
@@ -130,7 +110,11 @@ class UntypedGKAggregator(
         )
       )
     }
-    new GKRecord[Double](epsilon, sample.toList, count)
+    val pending: Seq[Double] = buffer.getSeq[Double](2)
+    val oldRecord: GKRecord[Double] = new GKRecord[Double](epsilon, sample.toList, count)
+    pending.foldLeft(oldRecord)(
+      (x: GKRecord[Double], y: Double) => x.insert(y)
+    )
   }
   // Turns a typed record back into the stuff that goes into a bufferSchema.
   // This doesn't produce a Row/MutableAggregationBuffer since
@@ -148,16 +132,37 @@ class UntypedGKAggregator(
     val count: Long = r.count
     (newSample, count)
   }
-  // buffer is of "type" bufferSchema
-  // input is of "type" inputSchema
+  /** buffer is of "type" bufferSchema, i.e.
+      (
+        sample: ArrayType[
+          (value: DoubleType, g: LongType, delta: LongType)
+        ],
+        count: LongType
+      )
+
+   input is of "type" inputSchema, i.e. (value: DoubleType)
+    */
+  // there may be a way to avoid duplication of effort here but the types make it weird.
+
   def update(buffer: MutableAggregationBuffer, input: Row): Unit = {
     val newValue: Double = input.getDouble(0)
-    val oldGKRecord: GKRecord[Double] = bufferToGKRecord(buffer)
-    val updatedGKRecord: GKRecord[Double] = oldGKRecord.insert(newValue)
-    val (s: Array[Row], c: Long) = gkRecordToBufferElements(updatedGKRecord)
-    buffer(0) = s
-    buffer(1) = c
+    // it's not clear which way was faster
+    //val pending: Seq[Double] = buffer.getSeq[Double](2) :+ newValue
+    //val count: Long = buffer.getLong(3) + 1
+    //if (count > 1000) {
+      val oldGKRecord: GKRecord[Double] = bufferToGKRecord(buffer)
+      val updatedGKRecord: GKRecord[Double] = oldGKRecord.insert(newValue)
+      val (s: Array[Row], c: Long) = gkRecordToBufferElements(updatedGKRecord)
+      buffer(0) = s
+      buffer(1) = c
+      //buffer(2) = Array[Double]()
+      //buffer(3) = 0L
+    //} else {
+    //  buffer(2) = pending.toArray
+    //  buffer(3) = count
+    //}
   }
+
   // buffer1 and buffer2 are both of "type" bufferSchema
   def merge(buffer1: MutableAggregationBuffer, buffer2: Row): Unit = {
     val gkRecord1: GKRecord[Double] = bufferToGKRecord(buffer1)
@@ -166,6 +171,8 @@ class UntypedGKAggregator(
     val (s: Array[Row], c: Long) = gkRecordToBufferElements(merged)
     buffer1(0) = s
     buffer1(1) = c
+    //buffer1(2) = Array[Double]()
+    //buffer1(3) = 0L
   }
   // buffer is of "type" bufferSchema
   def evaluate(buffer: Row): Map[Double, Double] = {
@@ -174,8 +181,4 @@ class UntypedGKAggregator(
       (q: Double) => (q -> gkRecord.query(q))
     ).toMap
   }
-
-
-
-
 }

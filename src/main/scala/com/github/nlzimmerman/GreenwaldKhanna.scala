@@ -119,57 +119,15 @@ class GKRecord[T](
       * the band increases every time
       # delta == threshold - (2**currentBand) - (threshold % (2**currentBand))
       */
-    def makeBands() = {
-      @tailrec
-      def makeBandsInner(
-        delta: Long,
-        currentBand: Long=0,
-        acc: List[Long] = List.empty[Long]
-      ): List[Long] = {
-        // remember that 1 << x == math.pow(2,x)
-        val nextThreshold: Long = maxDelta - (1L << currentBand) - (maxDelta % (1L << currentBand))
-        /** I don't know whether this is more readable than an if/else if/else
-          * or not. I don't think there's anything wrong with this but historically
-          * I have used if/elses in situations like this.
-          */
-        delta match {
-          /** delta is decrementing from the highest possible value to 0
-            * Once it hits 0, we are done.
-            */
-          case 0L => (currentBand + 1) +: acc
-          /** since the variable name is lower case, I need backticks to make a
-            * stable identifier.
-            * https://www.scala-lang.org/files/archive/spec/2.11/08-pattern-matching.html
-            */
-          /** If delta == maxDelta, we just started, in this special case, prepend
-            * a 0 to the (empty) list, not a 1
-            */
-          case `maxDelta` => makeBandsInner(
-            delta-1,
-            currentBand+1,
-            0L +: acc
-          )
-          /** if we crossed a threshold, increment the band (including at this record)
-            */
-          case `nextThreshold` => makeBandsInner(
-            delta-1,
-            currentBand+1,
-            (currentBand+1) +: acc
-          )
-          /** we didn't cross a threshold, so prepend the existing band and
-            * keep going.
-            */
-          case _ => makeBandsInner(
-            delta-1,
-            currentBand,
-            currentBand +: acc
-          )
-        }
-      }
-      makeBandsInner(maxDelta)
-    }
+    /**
+      *
+      * I moved makeBands() to the package object so that it could be called by the SQL.
+      *
+      */
+
+
     // vector because this is going to be random-read
-    val band: Vector[Long] = makeBands().toVector
+    val band: Vector[Long] = makeBands(maxDelta).toVector
     /** each of these functions are called exactly once.
       * Not sure if this makes my code more readable or less.
       */
@@ -246,7 +204,7 @@ class GKRecord[T](
         // going back to a list here because we're going back to the realm where
         // we're reading front to back.
         // the type annotation for GKRecord calls for a Seq so it's not a compiler
-        // error to not do this. 
+        // error to not do this.
         (head +: collapse(tail.head, tail.tail)).toList
       }
     }

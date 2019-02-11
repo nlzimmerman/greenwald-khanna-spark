@@ -258,7 +258,7 @@ class SparkSuite extends WordSpec {
         parallelize(numbers)
       def gkCheckFast(epsilon: Double): Unit = {
         val bounds: Seq[(Double, Double)] = inverseNormalCDFBounds(targets, epsilon)
-        val n: Map[Double, Double] = GKQuantile.getQuantiles(numbers, targets, epsilon)
+        val n: Map[Double, Double] = GKQuantile.getQuantiles(n0, targets, epsilon)
         val q: Seq[Double] = targets.map(n(_))
         boundsCheck(q, bounds)
       }
@@ -272,8 +272,40 @@ class SparkSuite extends WordSpec {
         gkCheckFast(0.05)
       }
 
-
     }
+
+    "be able to invert the rounded normal distribution in Spark" when {
+      "rounded to two digits" when {
+        import org.apache.log4j.{Level, Logger}
+        Logger.getLogger("org.apache.spark").setLevel(Level.WARN)
+        Logger.getLogger("akka").setLevel(Level.WARN)
+        import Util._
+        import NormalNumbers._
+        import TestParams._
+
+        val roundToTwo: Double => Double = roundDouble(2)
+        val roundedNumbersLocal: Seq[Double] = numbers.map(roundToTwo)
+        // have to take this directly; brutal.
+        val n0: RDD[Double] = spark.
+          sparkContext.
+          parallelize(roundedNumbersLocal)repartition(100)
+
+        def gkCheck(epsilon: Double): Unit = {
+          // this is going to be pretty slow.
+          val bounds: Seq[(Double, Double)] = directQuantileBounds(targets, epsilon, roundedNumbersLocal)
+          val n: Map[Double, Double] = GKQuantile.getQuantiles(n0, targets, epsilon)
+          val q: Seq[Double] = targets.map(n(_))
+          boundsCheck(q, bounds)
+        }
+
+        "epsilon = 0.05" in {
+          gkCheck(0.05)
+        }
+
+
+      }
+    }
+
     "be able to invert the normal distribution in Spark by key" when {
       import org.apache.log4j.{Level, Logger}
       Logger.getLogger("org.apache.spark").setLevel(Level.WARN)
